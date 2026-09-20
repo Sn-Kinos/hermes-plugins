@@ -44,10 +44,15 @@ TOOL_VERBS_KO: dict[str, str] = {
     "skills_list": "스킬 목록",
     "skill_manage": "스킬 수정",
     "delegate_task": "작업 위임",
+    # Renamed upstream in 0.21.x (cronjob -> cronjob_manage, todo -> todo_list).
+    # Both spellings are kept so the table works on 0.19.x and 0.21.x alike;
+    # the loader ignores names the running build does not define.
     "cronjob": "일정 관리",
+    "cronjob_manage": "일정 관리",
     "clarify": "질문",
     "memory": "기억 갱신",
     "todo": "할 일 갱신",
+    "todo_list": "할 일 갱신",
 }
 
 # ---------------------------------------------------------------------------

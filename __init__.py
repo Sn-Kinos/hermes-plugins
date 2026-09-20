@@ -71,15 +71,26 @@ def _patch_tool_verbs() -> None:
 
     # Mutate in place: get_tool_verb()/build_tool_label() read the module-level
     # dict at call time, so this takes effect for already-imported callers.
-    unknown = set(TOOL_VERBS_KO) - set(display._TOOL_VERBS)
-    if unknown:
-        logger.warning(
-            "hermes-korean-ui: tool verbs not present upstream (ignored): %s",
-            ", ".join(sorted(unknown)),
-        )
+    applied_verbs = set()
     for tool_name, verb_ko in TOOL_VERBS_KO.items():
         if tool_name in display._TOOL_VERBS:
             display._TOOL_VERBS[tool_name] = verb_ko
+            applied_verbs.add(verb_ko)
+
+    # Only report a tool whose Korean verb reached NO upstream name.  The
+    # table carries both spellings of the entries upstream renamed in 0.21.x
+    # (cronjob/cronjob_manage, todo/todo_list) so it works on either build —
+    # the unused spelling is expected, not a gap worth warning about.
+    unmatched = sorted(
+        name
+        for name, verb_ko in TOOL_VERBS_KO.items()
+        if name not in display._TOOL_VERBS and verb_ko not in applied_verbs
+    )
+    if unmatched:
+        logger.warning(
+            "hermes-korean-ui: tool verbs not present upstream (left in English): %s",
+            ", ".join(unmatched),
+        )
 
     # Upstream renders "Searching the web for <query>" for these two.  Korean
     # puts the object first, so the English " for " connector reads as
