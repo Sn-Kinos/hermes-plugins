@@ -1,0 +1,5 @@
+name: hermes-korean-ui
+kind: standalone
+version: 1.0.0
+description: Korean localization for hermes-agent's hardcoded user-facing system strings (tool verbs, cron delivery wrapper, background-review notices, gateway lifecycle bumps).
+author: local (kinos)
