@@ -1,0 +1,5 @@
+name: discord-add-reaction
+kind: standalone
+version: 1.0.0
+description: Adds an `add_reaction` action to the built-in `discord` tool (upstream has none).
+author: local (kinos)
