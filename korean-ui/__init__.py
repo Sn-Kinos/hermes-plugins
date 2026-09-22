@@ -126,7 +126,7 @@ def _patch_cron_delivery() -> None:
 
     _orig_deliver_result = scheduler._deliver_result
 
-    def _deliver_result(job, content, adapters=None, loop=None):
+    def _deliver_result(job, content, adapters=None, loop=None, **kwargs):
         try:
             ko_on, en_on = _cron_wrap_ko_enabled()
             if ko_on:
@@ -147,7 +147,7 @@ def _patch_cron_delivery() -> None:
                     )
         except Exception:
             logger.debug("hermes-korean-ui: cron wrapper failed", exc_info=True)
-        return _orig_deliver_result(job, content, adapters=adapters, loop=loop)
+        return _orig_deliver_result(job, content, adapters=adapters, loop=loop, **kwargs)
 
     scheduler._deliver_result = _deliver_result
     setattr(scheduler, _MARK, True)
