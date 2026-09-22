@@ -18,6 +18,37 @@ from __future__ import annotations
 
 import re
 
+
+def tpl(template: str, korean: str) -> tuple[re.Pattern, str]:
+    """Build an anchored rewrite from upstream's literal text.
+
+    *template* is the English source string with ``{}`` where its f-string
+    interpolates; each one becomes a numbered capture.  *korean* places those
+    captures with ``{0}``, ``{1}`` … so Korean word order is free:
+
+        tpl("❌ Rate limited after {} retries — {}", "❌ {0}회 재시도 후 속도 제한 — {1}")
+
+    Writing the English side as the literal text (rather than hand-rolled
+    regex) keeps an entry checkable against the source line it came from, and
+    an upstream reword simply fails to match and falls back to English.
+    """
+    # Any ``{...}`` is a hole, so format specs (``{tokens:,}``) work too.
+    hole = re.compile(r"\{[^{}]*\}")
+    parts = hole.split(template)
+    pattern = "^" + "(.*?)".join(re.escape(p) for p in parts)
+    if hole.search(template) and template.endswith("}"):  # trailing hole takes the rest
+        pattern = pattern[: -len("(.*?)")] + "(.*)"
+    # ``{0}``/``{1}`` place a specific capture; a bare ``{}`` takes the next one
+    # in order, so a same-order translation needs no numbering.
+    counter = iter(range(1, 100))
+
+    def place(match: re.Match) -> str:
+        index = match.group(1)
+        return f"\\g<{int(index) + 1}>" if index else f"\\g<{next(counter)}>"
+
+    replacement = re.sub(r"\{(\d*)\}", place, korean.replace("\\", "\\\\"))
+    return re.compile(pattern, re.S), replacement
+
 # ---------------------------------------------------------------------------
 # 1. Friendly tool labels  (agent/display.py::_TOOL_VERBS)
 #
@@ -308,6 +339,250 @@ SEND_REWRITES: list[tuple[re.Pattern, str]] = [
      "⚠️ 응답 없음: 로컬 모델의 컨텍스트 창이 너무 작아 끝내지 못했습니다. "
      "컨텍스트 크기를 늘리거나 더 큰 모델을 쓰세요."),
     (re.compile(r"^⚠️ No reply: "), "⚠️ 응답 없음: "),
+
+    # ---- provider errors, retries and fallbacks ---------------------------
+    # Ordered specific-before-generic: "⚠️ {} — trying fallback..." would
+    # otherwise swallow the Max-retries variant that precedes it.
+    tpl("⚠️ Max retries ({}) exhausted — trying fallback...",
+        "⚠️ 최대 재시도 횟수({}회) 소진 — 폴백으로 전환합니다..."),
+    tpl("⚠️ Max retries ({}) for invalid responses — trying fallback...",
+        "⚠️ 잘못된 응답에 대한 최대 재시도 횟수({}회) 도달 — 폴백으로 전환합니다..."),
+    tpl("❌ Max retries ({}) exceeded for invalid responses. Giving up.",
+        "❌ 잘못된 응답에 대한 최대 재시도 횟수({}회)를 초과했습니다. 중단합니다."),
+    tpl("⚠️ Empty response from model — retrying ({}/{}) in {}s{}",
+        "⚠️ 모델이 빈 응답을 반환 — {2}초 후 재시도 ({0}/{1}){3}"),
+    tpl("⚠️ Model returning empty responses — switching to fallback provider...",
+        "⚠️ 모델이 계속 빈 응답을 반환 — 폴백 제공자로 전환합니다..."),
+    tpl("⚠️ Model is repeatedly returning empty content — skipping further retries "
+        "to avoid repeat charges",
+        "⚠️ 모델이 반복해서 빈 응답을 반환 — 중복 과금을 피하려고 추가 재시도를 건너뜁니다"),
+    tpl("⚠️ Model produced reasoning but no visible response after all retries. Returning empty.",
+        "⚠️ 재시도를 모두 거쳤지만 모델이 추론만 하고 표시할 응답을 내놓지 않았습니다. 빈 응답을 반환합니다."),
+    tpl("❌ Model returned no content after all retries",
+        "❌ 재시도를 모두 거쳤지만 모델이 아무 내용도 반환하지 않았습니다"),
+    tpl("⚠️ Empty/malformed response — switching to fallback...",
+        "⚠️ 비어 있거나 형식이 잘못된 응답 — 폴백으로 전환합니다..."),
+    tpl("⚠️ Model declined to respond (safety refusal) — trying fallback...",
+        "⚠️ 모델이 응답을 거부했습니다 (안전 정책) — 폴백으로 전환합니다..."),
+    tpl("❌ The model provider didn't answer after all retries. Send /retry, or switch models with /model.",
+        "❌ 재시도를 모두 거쳤지만 모델 제공자가 응답하지 않았습니다. /retry를 보내거나 /model로 모델을 바꾸세요."),
+
+    tpl("⚠️ Model fallback: {} via {} unavailable ({}); using {} via {}.",
+        "⚠️ 모델 폴백: {0}({1}) 사용 불가 ({2}). {3}({4})으로 대체합니다."),
+    tpl("✅ Primary model restored: {} via {}; fallback {} via {} is no longer active.",
+        "✅ 기본 모델 복구: {0}({1}). 폴백 {2}({3})은 더 이상 사용되지 않습니다."),
+    tpl("⚠️ Upstream {} rate-limited — switching to fallback model...",
+        "⚠️ 업스트림 {} 속도 제한 — 폴백 모델로 전환합니다..."),
+    tpl("⚠️ Provider reported usage/credit exhaustion (unverified — may be a content-filter "
+        "rejection) — switching to fallback provider...",
+        "⚠️ 제공자가 사용량/크레딧 소진을 알렸습니다 (미확인 — 콘텐츠 필터 거부일 수도 있습니다) "
+        "— 폴백 제공자로 전환합니다..."),
+    tpl("⚠️ Provider unreachable — switching to fallback provider...",
+        "⚠️ 제공자에 연결할 수 없음 — 폴백 제공자로 전환합니다..."),
+    tpl("⚠️ Rate limited — switching to fallback provider...",
+        "⚠️ 속도 제한 — 폴백 제공자로 전환합니다..."),
+    tpl("🔐 Authentication failed and could not be refreshed — switching to fallback provider...",
+        "🔐 인증에 실패했고 갱신도 되지 않았습니다 — 폴백 제공자로 전환합니다..."),
+    tpl("⚠️ {} — trying fallback...", "⚠️ {} — 폴백으로 전환합니다..."),
+
+    tpl("❌ Provider reported usage/credit exhaustion (unverified — may be a content-filter "
+        "rejection) — {}",
+        "❌ 제공자가 사용량/크레딧 소진을 알렸습니다 (미확인 — 콘텐츠 필터 거부일 수도 있습니다) — {}"),
+    tpl("❌ Billing or credits exhausted — {}", "❌ 청구 또는 크레딧 소진 — {}"),
+    tpl("❌ Rate limited after {} retries — {}{}", "❌ {0}회 재시도 후 속도 제한 — {1}{2}"),
+    tpl("❌ API failed after {} retries — {}", "❌ {0}회 재시도 후 API 실패 — {1}"),
+    tpl("❌ {} {} attempts. The provider may be experiencing issues — try again in a moment.",
+        "❌ {0} {1}회 시도. 제공자 쪽 문제일 수 있으니 잠시 후 다시 시도해 주세요."),
+
+    tpl("⚠️ No response from provider for {}s (model: {}, context: ~{} tokens). Reconnecting...",
+        "⚠️ {0}초 동안 제공자 응답 없음 (모델: {1}, 컨텍스트: 약 {2} 토큰). 다시 연결합니다..."),
+    tpl("⚠️ No first stream event from provider in {}s (codex stream, model: {}). Reconnecting.",
+        "⚠️ {0}초 동안 제공자의 첫 스트림 이벤트가 없습니다 (codex 스트림, 모델: {1}). 다시 연결합니다."),
+    tpl("⚠️ Codex stream sent no events for {}s after {} (model: {}). Reconnecting.",
+        "⚠️ {1} 이후 {0}초 동안 codex 스트림에 이벤트가 없습니다 (모델: {2}). 다시 연결합니다."),
+    tpl("⚠ no output from provider for {}s — reconnecting...",
+        "⚠ {}초 동안 제공자 출력 없음 — 다시 연결합니다..."),
+    tpl("⚠ no response from provider in {}s — reconnecting...",
+        "⚠ {}초 동안 제공자 응답 없음 — 다시 연결합니다..."),
+    tpl("⚠️ Provider stream returned an empty keepalive frame — retrying this turn without "
+        "streaming (streaming stays off for this session).",
+        "⚠️ 제공자 스트림이 빈 keepalive 프레임을 반환 — 이번 턴은 스트리밍 없이 재시도합니다 "
+        "(이 세션에서는 스트리밍이 꺼진 상태로 유지됩니다)."),
+    tpl("⚠ Stream stalled mid tool-call ({}); the action was not executed. Ask me to retry if "
+        "you want to continue.",
+        "⚠ 툴 호출 도중 스트림이 멈췄습니다 ({}). 해당 작업은 실행되지 않았습니다. 계속하려면 "
+        "다시 시도해 달라고 말씀해 주세요."),
+    tpl("❌ Could not open a stream to {} after {} attempt{}",
+        "❌ {1}번 시도했지만 {0}에 스트림을 열지 못했습니다{2}"),
+    tpl("🔌 Detected stale connections from a previous provider issue — cleaned up "
+        "automatically. Proceeding with fresh connection.",
+        "🔌 이전 제공자 문제로 남아 있던 연결을 발견해 자동으로 정리했습니다. 새 연결로 진행합니다."),
+    tpl("🔄 Codex soft failure ({}) — switched to the next pool credential, retrying...",
+        "🔄 Codex 일시 실패 ({}) — 풀의 다음 자격 증명으로 바꿔 재시도합니다..."),
+
+    tpl("⏳ Provider temporarily unavailable — retrying automatically in {}s (cycle {}/{})",
+        "⏳ 제공자를 일시적으로 사용할 수 없습니다 — {0}초 후 자동 재시도 ({1}/{2} 주기)"),
+    tpl("⏳ Automatic recovery gave up after {} cycles — the provider is still unavailable.",
+        "⏳ {}주기 동안 자동 복구를 시도했지만 제공자를 여전히 사용할 수 없습니다."),
+    tpl("⏳ Retrying in {}s (attempt {}/{})...", "⏳ {0}초 후 재시도합니다 ({1}/{2})..."),
+    tpl("⏳ Retrying in {}s ({})...", "⏳ {0}초 후 재시도합니다 ({1})..."),
+    tpl("⏳ {} retrying in {}s (attempt {}/{})", "⏳ {0} {1}초 후 재시도 ({2}/{3})"),
+    tpl("🔄 Retrying API call ({}/2)...", "🔄 API 호출 재시도 ({}/2)..."),
+    tpl("🔄 Retrying API call ({}/3)...", "🔄 API 호출 재시도 ({}/3)..."),
+    tpl("⚠️ Stream interrupted mid tool-call — retrying ({}/4)...",
+        "⚠️ 툴 호출 도중 스트림이 끊겼습니다 — 재시도 ({}/4)..."),
+
+    # ---- gateway-facing provider copy -------------------------------------
+    tpl("⏱️ The AI model service is rate-limiting requests. Wait a moment, then use /retry.",
+        "⏱️ AI 모델 서비스가 요청 속도를 제한하고 있습니다. 잠시 기다린 뒤 /retry를 사용하세요."),
+    tpl("⏱️ The AI model service's usage limit is reached; it resets in {}. Use /retry after "
+        "that, or /model to switch models.",
+        "⏱️ AI 모델 서비스의 사용 한도에 도달했습니다. {} 후에 초기화됩니다. 그 뒤 /retry를 "
+        "사용하거나 /model로 모델을 바꾸세요."),
+    tpl("⚠️ The connection to the AI model service was interrupted mid-request — usually "
+        "transient. Use /retry to try again; if it keeps happening, run `hermes doctor` on the host.",
+        "⚠️ 요청 도중 AI 모델 서비스와의 연결이 끊겼습니다 — 대개 일시적입니다. /retry로 다시 "
+        "시도하고, 계속 발생하면 호스트에서 `hermes doctor`를 실행하세요."),
+    tpl("⚠️ The AI model service isn't reachable right now — the configured model endpoint is "
+        "not running or is unreachable. Wait a moment and use /retry; if it persists, run "
+        "`hermes doctor` on the host.",
+        "⚠️ 지금 AI 모델 서비스에 연결할 수 없습니다 — 설정된 모델 엔드포인트가 실행 중이 아니거나 "
+        "접근할 수 없습니다. 잠시 후 /retry를 사용하고, 계속되면 호스트에서 `hermes doctor`를 실행하세요."),
+    tpl("⚠️ Hermes could not reach the AI model service (no further detail from the SDK). Use "
+        "/retry to try again; if it persists, run `hermes doctor` on the host.",
+        "⚠️ Hermes가 AI 모델 서비스에 연결하지 못했습니다 (SDK가 추가 정보를 주지 않았습니다). "
+        "/retry로 다시 시도하고, 계속되면 호스트에서 `hermes doctor`를 실행하세요."),
+    tpl("⚠️ The AI model service kept failing. Use /retry to try again, or /model to switch "
+        "models. Details are in the gateway log (`hermes logs`).",
+        "⚠️ AI 모델 서비스가 계속 실패했습니다. /retry로 다시 시도하거나 /model로 모델을 바꾸세요. "
+        "자세한 내용은 게이트웨이 로그(`hermes logs`)에 있습니다."),
+    tpl("⚠️ Something went wrong and I couldn't finish this reply.{} Use /retry to try again, "
+        "or /new to start a fresh conversation. Technical details are in the gateway log "
+        "(`hermes logs`).",
+        "⚠️ 문제가 생겨 이 응답을 끝내지 못했습니다.{} /retry로 다시 시도하거나 /new로 새 대화를 "
+        "시작하세요. 기술적인 내용은 게이트웨이 로그(`hermes logs`)에 있습니다."),
+    tpl("⚠️ I had to stop before finishing{}. Use /retry to try again, or /compress if this "
+        "conversation has grown very long.",
+        "⚠️ 끝내기 전에 중단해야 했습니다{}. /retry로 다시 시도하거나, 대화가 아주 길어졌다면 "
+        "/compress를 사용하세요."),
+    tpl("♻️ Recovered reply — the messaging platform's rate limit refused the original, so part "
+        "of it may already have arrived above:",
+        "♻️ 복구된 응답 — 메신저 플랫폼의 속도 제한으로 원본이 거부됐습니다. 일부는 위에 이미 "
+        "도착했을 수 있습니다:"),
+    tpl("❌ Your background task \"{}\" failed before finishing. Send /bg again to retry, or "
+        "/agents to see what is still running.",
+        "❌ 백그라운드 작업 \"{}\"이(가) 끝나기 전에 실패했습니다. /bg를 다시 보내 재시도하거나 "
+        "/agents로 실행 중인 작업을 확인하세요."),
+    tpl("⚠️ Hermes could not create a Discord thread for this message, so the request was not "
+        "processed. Please retry.",
+        "⚠️ 이 메시지에 대한 디스코드 스레드를 만들지 못해 요청이 처리되지 않았습니다. 다시 시도해 주세요."),
+    tpl("✓ {} resumed — retrying on next watcher tick.",
+        "✓ {} 재개됨 — 다음 감시 주기에 재시도합니다."),
+    # Only the trailing sentence is prose; the title and body are built elsewhere
+    # and the slash-command prefix is preserved verbatim.
+    tpl("⚠️ **{}** {} _Text fallback: reply `{}approve` to switch or `{}cancel` to keep the "
+        "current model._",
+        "⚠️ **{0}** {1} _텍스트 대체: 바꾸려면 `{2}approve`, 현재 모델을 유지하려면 "
+        "`{3}cancel`로 답하세요._"),
+
+    # ---- compression / context (provider-adjacent) ------------------------
+    tpl("⚠ Compression aborted: {}. No messages were dropped — conversation continues "
+        "unchanged. Run /compress to retry, or /new to start a fresh session.",
+        "⚠ 압축이 중단됐습니다: {}. 삭제된 메시지는 없고 대화는 그대로입니다. /compress로 다시 "
+        "시도하거나 /new로 새 세션을 시작하세요."),
+    tpl("⚠ Compression summary failed: {}. Inserted a fallback context marker.",
+        "⚠ 압축 요약에 실패했습니다: {}. 대체 컨텍스트 표식을 넣었습니다."),
+    tpl("⚠ Skipping concurrent compression — another path is already compressing this session. "
+        "Will retry after it finishes.",
+        "⚠ 동시 압축을 건너뜁니다 — 다른 경로에서 이미 이 세션을 압축 중입니다. 끝난 뒤 재시도합니다."),
+    tpl("⚠ Context compression reached its total ceiling after {}s{}. No messages were dropped "
+        "— continuing without compression. Run /compress to retry or /new for a clean session.",
+        "⚠ 컨텍스트 압축이 {0}초 만에 총 한도에 도달했습니다{1}. 삭제된 메시지는 없으며 압축 없이 "
+        "계속합니다. /compress로 다시 시도하거나 /new로 새 세션을 시작하세요."),
+    tpl("⚠ Context compression timed out after {}s with no output from the summary model. No "
+        "messages were dropped — continuing without compression. Run /compress to retry, /new "
+        "for a clean session, or check auxiliary.compression.",
+        "⚠ 요약 모델이 아무 출력도 내지 않아 컨텍스트 압축이 {}초 만에 시간 초과됐습니다. 삭제된 "
+        "메시지는 없으며 압축 없이 계속합니다. /compress로 다시 시도하거나, /new로 새 세션을 "
+        "시작하거나, auxiliary.compression 설정을 확인하세요."),
+    tpl("⚠ Configured auxiliary compression provider '{}' is unavailable, so older messages in "
+        "long chats will be cut without a summary. Sign in to that provider again, or change "
+        "auxiliary.compression in your config.",
+        "⚠ 설정된 보조 압축 제공자 '{}'을(를) 사용할 수 없어, 긴 대화의 오래된 메시지가 요약 없이 "
+        "잘려 나갑니다. 해당 제공자에 다시 로그인하거나 설정의 auxiliary.compression을 바꾸세요."),
+    tpl("⚠ No auxiliary LLM provider configured: Hermes has no helper model for summarising "
+        "long chats, so older messages will be cut without a summary. Run `hermes setup` to add one.",
+        "⚠ 보조 LLM 제공자가 설정되지 않았습니다: 긴 대화를 요약할 보조 모델이 없어 오래된 메시지가 "
+        "요약 없이 잘려 나갑니다. `hermes setup`으로 하나 추가하세요."),
+    tpl("⚠ Context is over the compression threshold (~{} tokens >= {}) but compression is "
+        "currently blocked ({}). The model may stop responding. Run /new to start a fresh "
+        "session or /compress to retry immediately.",
+        "⚠ 컨텍스트가 압축 임계값을 넘었지만 (약 {0} 토큰 >= {1}) 현재 압축이 막혀 있습니다 ({2}). "
+        "모델이 응답을 멈출 수 있습니다. /new로 새 세션을 시작하거나 /compress로 즉시 재시도하세요."),
+    tpl("🗜️ Context reduced to {} tokens (was {}), retrying...",
+        "🗜️ 컨텍스트를 {0} 토큰으로 줄였습니다 (이전 {1}). 재시도합니다..."),
+    tpl("🗜️ Compressed {} → {} payload bytes, retrying...",
+        "🗜️ 페이로드를 {0} → {1} 바이트로 압축했습니다. 재시도합니다..."),
+    tpl("📐 Compression could not reduce the request further — removed retained vision payloads "
+        "and retrying...",
+        "📐 요청을 더 줄일 수 없어 보관 중이던 이미지 페이로드를 제거하고 재시도합니다..."),
+    tpl("❌ The provider rejected the request because the requested output length exceeds its "
+        "output cap for this model, and the error did not state the allowed limit.",
+        "❌ 요청한 출력 길이가 이 모델의 출력 상한을 넘어 제공자가 요청을 거부했습니다. 오류에 "
+        "허용 한도는 나와 있지 않았습니다."),
+    tpl("💡 Wait a moment and /retry; another request on the same server (e.g. a background "
+        "review) may have been holding its context.",
+        "💡 잠시 후 /retry를 해보세요. 같은 서버의 다른 요청(예: 배경 검토)이 컨텍스트를 점유하고 "
+        "있었을 수 있습니다."),
+    tpl("💡 Try /new to start a fresh conversation, or /compress to retry compression.",
+        "💡 /new로 새 대화를 시작하거나 /compress로 압축을 다시 시도해 보세요."),
+    tpl("⚠️ Codex app-server compaction did not complete — the thread is unchanged. Check the "
+        "app-server logs, retry /compress, or /reset for a clean session.",
+        "⚠️ Codex app-server 압축이 완료되지 않아 스레드가 그대로입니다. app-server 로그를 "
+        "확인하거나 /compress를 다시 시도하거나 /reset으로 새 세션을 시작하세요."),
+    tpl("⚠️ Turn aborted by the liveness watchdog ({}s without activity); lease renewal stopped "
+        "so the session can be reclaimed. You can retry your message.",
+        "⚠️ 활동이 {}초 동안 없어 liveness 워치독이 턴을 중단했습니다. 세션을 회수할 수 있도록 "
+        "리스 갱신을 멈췄습니다. 메시지를 다시 보내셔도 됩니다."),
+
+    # ---- tools / subagents ------------------------------------------------
+    tpl("⚠️ Subagent timed out{}{} without finishing. I will carry on without it; ask me to "
+        "retry it, or raise delegation.child_timeout_seconds in config.yaml if these tasks "
+        "legitimately take longer.",
+        "⚠️ 서브에이전트가 끝내지 못하고 시간 초과됐습니다{0}{1}. 이것 없이 계속 진행합니다. "
+        "다시 시도하라고 말씀하시거나, 이런 작업이 원래 오래 걸린다면 config.yaml의 "
+        "delegation.child_timeout_seconds를 늘리세요."),
+    tpl("⚠ SUBAGENT MODEL REJECTED: the configured Subagent Model \"{}\" was rejected by "
+        "provider \"{}\" (HTTP 400: not a valid model ID).",
+        "⚠ 서브에이전트 모델 거부됨: 설정된 서브에이전트 모델 \"{0}\"이(가) 제공자 \"{1}\"에서 "
+        "거부됐습니다 (HTTP 400: 유효하지 않은 모델 ID)."),
+    tpl("⚠ Lightpanda fallback: Chrome was used for this browser action. {}",
+        "⚠ Lightpanda 폴백: 이번 브라우저 작업에는 Chrome을 사용했습니다. {}"),
+    tpl("⚠️ Sudo authentication failed — cached password cleared. You will be prompted again on "
+        "the next sudo command.",
+        "⚠️ sudo 인증에 실패해 캐시된 비밀번호를 지웠습니다. 다음 sudo 명령에서 다시 물어봅니다."),
+    tpl("⚠ {}: upstream moved this skill to {}, but your modified copy at {} was kept — it will "
+        "not receive updates. Run `hermes skills reset {} --restore` to move to the new location.",
+        "⚠ {0}: 업스트림이 이 스킬을 {1}(으)로 옮겼지만, {2}에 있는 수정본을 그대로 뒀습니다 — "
+        "업데이트는 반영되지 않습니다. 새 위치로 옮기려면 `hermes skills reset {3} --restore`를 "
+        "실행하세요."),
+    tpl("⚠️ Unauthorized Discord slash attempt User: {} ({}) Channel: {} (guild {}) Command: {} "
+        "Reason: {}",
+        "⚠️ 허가되지 않은 디스코드 슬래시 명령 시도 사용자: {0} ({1}) 채널: {2} (길드 {3}) "
+        "명령: {4} 사유: {5}"),
+    tpl("💡 First-time tip — that tool took a while and I'm streaming every step. If the "
+        "progress messages feel noisy, send `/verbose` to cycle modes (all → new → off). This "
+        "notice won't appear again.",
+        "💡 처음 안내 — 그 툴이 시간이 좀 걸려서 진행 상황을 단계마다 보내고 있어요. 진행 메시지가 "
+        "번잡하면 `/verbose`로 모드를 바꾸세요 (all → new → off). 이 안내는 다시 나오지 않습니다."),
+    tpl("⚠ auxiliary.background_review.reasoning_effort='{}' has no effect while the review "
+        "runs on the main model: the fork inherits the conversation's reasoning effort to keep "
+        "the parent's prompt-cache prefix (see memory docs, same-model review reasoning). Route "
+        "the review elsewhere via auxiliary.background_review.provider/model to use a different effort.",
+        "⚠ 배경 검토가 메인 모델에서 실행되는 동안에는 "
+        "auxiliary.background_review.reasoning_effort='{}'가 적용되지 않습니다: 포크가 부모의 "
+        "프롬프트 캐시 접두사를 유지하려고 대화의 추론 강도를 그대로 물려받기 때문입니다. 다른 "
+        "강도를 쓰려면 auxiliary.background_review.provider/model로 검토를 다른 곳으로 보내세요."),
 
     # ---- agent-side warnings ----------------------------------------------
     (re.compile(r"^⚠ Auxiliary (?P<t>[^ ]+) failed: "), "⚠ 보조 작업(\\g<t>) 실패: "),
