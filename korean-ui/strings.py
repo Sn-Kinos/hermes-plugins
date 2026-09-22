@@ -57,7 +57,8 @@ TOOL_VERBS_KO: dict[str, str] = {
 
 # ---------------------------------------------------------------------------
 # 2. Cron delivery wrapper  (cron/scheduler.py::_deliver_result)
-#    Applied only when cron.wrap_response_ko is true.
+#    Replaces upstream's English header/footer whenever a wrapper is emitted
+#    at all (cron.wrap_response, default true).
 # ---------------------------------------------------------------------------
 CRON_WRAP_KO = (
     "⏰ 크론잡 결과: {task_name}\n"
@@ -299,7 +300,35 @@ SEND_REWRITES: list[tuple[re.Pattern, str]] = [
 ]
 
 # ---------------------------------------------------------------------------
-# 5. Interactive-component labels (approval / confirm / picker buttons).
+# 5. Exec-approval prompt.
+#
+# The prompt body is assembled inside the adapter from class attributes, so it
+# never passes the send() seam — these replace the attributes themselves.
+# ``{}`` in DEADLINE_LINE_KO takes the formatted window ("1 minute").
+# ---------------------------------------------------------------------------
+EXEC_APPROVAL_KO: dict[str, str] = {
+    "_EA_HEADER": (
+        "⚠️ **Hermes가 실행 승인을 요청합니다**\n\n"
+        "이 명령을 실행할까요?\n\n"
+        "**요청한 명령:**\n"
+    ),
+    "_EA_REASON_LABEL": "**승인이 필요한 이유:** ",
+    "_EA_SMART_DENY_LINE": "\n\n**스마트 거부:** 소유자 권한은 이 작업 한 번에만 적용됩니다.",
+}
+
+DEADLINE_LINE_KO = "{}간 응답이 없으면 실행되지 **않습니다**."
+
+# Approval window wording ("1 minute" -> "1분"), used inside DEADLINE_LINE_KO.
+APPROVAL_WINDOW_KO: list[tuple[re.Pattern, str]] = [
+    (re.compile(r"^(?P<n>\d+)\s+minutes?$"), "\\g<n>분"),
+    (re.compile(r"^(?P<n>\d+)\s+seconds?$"), "\\g<n>초"),
+    (re.compile(r"^(?P<n>\d+)\s+hours?$"), "\\g<n>시간"),
+]
+
+# ---------------------------------------------------------------------------
+# 6. Interactive-component labels (approval / confirm / picker buttons) and the
+#    flag reasons, which reach the adapter as ``send_exec_approval(description=)``
+#    and are therefore rewritten on the way in.
 #    Exact-match only — these are short, so substring rewriting would be unsafe.
 # ---------------------------------------------------------------------------
 LABEL_KO: dict[str, str] = {
@@ -317,4 +346,12 @@ LABEL_KO: dict[str, str] = {
     "Cancel": "취소",
     "Yes": "예",
     "No": "아니오",
+    # Flag reasons (tools/approval.py, tools/approval_detection.py).
+    "execute_code script execution. The script can spawn subprocesses or mutate files "
+    "without passing through terminal command approval; approval is one-shot for this run.":
+        "execute_code 스크립트 실행. 이 스크립트는 terminal 명령 승인을 거치지 않고 하위 "
+        "프로세스를 띄우거나 파일을 바꿀 수 있습니다. 승인은 이번 실행 한 번에만 적용됩니다.",
+    "script execution via -e/-c flag": "-e/-c 플래그를 통한 스크립트 실행",
+    "script execution via heredoc": "heredoc을 통한 스크립트 실행",
+    "dangerous command": "위험한 명령",
 }

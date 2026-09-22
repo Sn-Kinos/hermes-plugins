@@ -27,19 +27,25 @@ Every patch is individually try/except'd and idempotent — a seam that upstream
 renames degrades to untranslated English and logs a warning, it never breaks
 the gateway.
 
-Config (``config.yaml``):
-  cron.wrap_response_ko: true   # Korean cron header/footer (default false).
-                                # Requires cron.wrap_response: false, else the
-                                # English wrapper is applied on top.
+No configuration is required: installing the plugin is what switches the
+strings to Korean.  ``cron.wrap_response`` keeps its upstream meaning (whether
+a cron header/footer is emitted at all, default true); set
+``cron.wrap_response_ko: false`` to hand that wrapper back to upstream in
+English.
 """
 
 from __future__ import annotations
 
+import contextlib
+import contextvars
 import logging
 
 from .strings import (
+    APPROVAL_WINDOW_KO,
     BG_ACTION_REWRITES,
     CRON_WRAP_KO,
+    DEADLINE_LINE_KO,
+    EXEC_APPROVAL_KO,
     LABEL_KO,
     SEND_REWRITES,
     TOOL_VERBS_KO,
@@ -104,51 +110,84 @@ def _patch_tool_verbs() -> None:
 # 2. Cron delivery wrapper
 # ---------------------------------------------------------------------------
 
-def _cron_wrap_ko_enabled() -> tuple[bool, bool]:
-    """Return (korean_wrap_enabled, english_wrap_also_on)."""
+def _cron_wrap_enabled() -> bool:
+    """Whether a cron header/footer should be emitted at all.
+
+    ``cron.wrap_response`` keeps its upstream meaning (default true).  The
+    Korean wrapper replaces the English one in place, so the user configures
+    the wrapper, not the language.  ``cron.wrap_response_ko: false`` is the
+    escape hatch that hands the wrapper back to upstream in English.
+    """
     try:
         from hermes_cli.config import load_config
 
         cron_cfg = (load_config() or {}).get("cron") or {}
         return (
-            bool(cron_cfg.get("wrap_response_ko", False)),
-            bool(cron_cfg.get("wrap_response", True)),
+            bool(cron_cfg.get("wrap_response", True))
+            and bool(cron_cfg.get("wrap_response_ko", True))
         )
     except Exception:
-        return (False, True)
+        return True
+
+
+# Set only for the duration of our own _deliver_result call: while it is true,
+# the config that upstream's wrapper decision reads says wrap_response=false,
+# because we have already applied the Korean wrapper ourselves.  A ContextVar
+# (not a plain flag) so concurrent cron deliveries cannot see each other's
+# state — every thread starts from an empty context.
+_suppress_english_wrap: contextvars.ContextVar[bool] = contextvars.ContextVar(
+    "hermes_korean_ui_suppress_english_wrap", default=False
+)
 
 
 def _patch_cron_delivery() -> None:
+    """Translate the cron header/footer with no configuration at all.
+
+    ``cron/scheduler_delivery.py`` builds the wrapper inline, reading the config
+    through ``_sched.load_config()`` — a late-bound lookup its own module
+    docstring documents as the monkeypatch seam.  So we wrap the content in
+    Korean first and make that one config read report ``wrap_response: false``,
+    which suppresses upstream's English wrapper instead of stacking on top of
+    it.  Patching the config read (rather than asking the user to turn the
+    English wrapper off) is what keeps this a drop-in install.
+    """
     import cron.scheduler as scheduler
 
     if getattr(scheduler, _MARK, False):
         return
 
     _orig_deliver_result = scheduler._deliver_result
+    _orig_load_config = scheduler.load_config
+
+    def load_config(*args, **kwargs):
+        cfg = _orig_load_config(*args, **kwargs)
+        if not _suppress_english_wrap.get() or not isinstance(cfg, dict):
+            return cfg
+        # Shallow copy, one key changed: every other consumer of this config
+        # (media policy, notify + mirror gates) must see it unchanged.
+        patched = dict(cfg)
+        patched["cron"] = {**(cfg.get("cron") or {}), "wrap_response": False}
+        return patched
 
     def _deliver_result(job, content, adapters=None, loop=None, **kwargs):
+        token = None
         try:
-            ko_on, en_on = _cron_wrap_ko_enabled()
-            if ko_on:
-                if en_on:
-                    # Upstream would add its own English header/footer around
-                    # ours.  Bail out rather than emit a double wrapper.
-                    logger.warning(
-                        "hermes-korean-ui: cron.wrap_response_ko is on but "
-                        "cron.wrap_response is also true — skipping the Korean "
-                        "wrapper to avoid double-wrapping. Set "
-                        "cron.wrap_response: false."
-                    )
-                else:
-                    content = CRON_WRAP_KO.format(
-                        task_name=job.get("name", job.get("id", "")),
-                        job_id=job.get("id", ""),
-                        content=content,
-                    )
+            if _cron_wrap_enabled():
+                content = CRON_WRAP_KO.format(
+                    task_name=job.get("name", job.get("id", "")),
+                    job_id=job.get("id", ""),
+                    content=content,
+                )
+                token = _suppress_english_wrap.set(True)
         except Exception:
             logger.debug("hermes-korean-ui: cron wrapper failed", exc_info=True)
-        return _orig_deliver_result(job, content, adapters=adapters, loop=loop, **kwargs)
+        try:
+            return _orig_deliver_result(job, content, adapters=adapters, loop=loop, **kwargs)
+        finally:
+            if token is not None:
+                _suppress_english_wrap.reset(token)
 
+    scheduler.load_config = load_config
     scheduler._deliver_result = _deliver_result
     setattr(scheduler, _MARK, True)
 
@@ -262,54 +301,172 @@ _DISCORD_TEXT_PARAMS: tuple[tuple[str, tuple[str, ...]], ...] = (
 )
 
 
-def _patch_discord_sends() -> None:
-    from plugins.platforms.discord.adapter import DiscordAdapter
+def _patch_exec_approval(cls) -> None:
+    """Translate the exec-approval prompt.
 
-    if getattr(DiscordAdapter, _MARK, False):
+    Its body never reaches ``send()`` — the adapter assembles it from class
+    attributes and sends the result as an interactive component — so the
+    attributes are replaced directly.  Only the ones upstream still defines are
+    touched, so a rename degrades to English instead of inventing an attribute.
+    """
+    for attr, text_ko in EXEC_APPROVAL_KO.items():
+        if hasattr(cls, attr):
+            setattr(cls, attr, text_ko)
+        else:
+            logger.warning(
+                "hermes-korean-ui: approval prompt has no %s (left in English)", attr
+            )
+
+
+def _patch_approval_deadline_line() -> None:
+    """The "doing nothing means it will NOT run" line.
+
+    ``base.py`` calls ``format_approval_deadline_line`` as a module global, so
+    replacing it on the defining module is enough for every adapter.
+    """
+    from gateway.platforms import base
+
+    if getattr(base, _MARK, False):
         return
 
+    _orig = base.format_approval_deadline_line
+
+    def format_approval_deadline_line(timeout_s):
+        try:
+            from gateway.platforms.base_exec_approval import format_approval_window
+
+            return DEADLINE_LINE_KO.format(
+                _apply(APPROVAL_WINDOW_KO, format_approval_window(timeout_s))
+            )
+        except Exception:
+            logger.debug("hermes-korean-ui: deadline line skipped", exc_info=True)
+            return _orig(timeout_s)
+
+    base.format_approval_deadline_line = format_approval_deadline_line
+    setattr(base, _MARK, True)
+
+
+def _patch_adapter_class(cls) -> bool:
+    """Patch one DiscordAdapter class.  Idempotent per class object."""
+    if cls is None or getattr(cls, _MARK, False):
+        return False
+    _patch_exec_approval(cls)
     missing = [
         name
         for name, params in _DISCORD_TEXT_PARAMS
-        if not _wrap_text_params(DiscordAdapter, name, params)
+        if not _wrap_text_params(cls, name, params)
     ]
     if missing:
         logger.warning(
             "hermes-korean-ui: Discord adapter has no %s (left in English)",
             ", ".join(missing),
         )
-    setattr(DiscordAdapter, _MARK, True)
+    setattr(cls, _MARK, True)
+    logger.debug("hermes-korean-ui: patched %s.%s", cls.__module__, cls.__qualname__)
+    return True
 
 
-def _patch_discord_standalone() -> None:
-    """Cron/out-of-gateway deliveries, which never touch the live adapter."""
-    from gateway.platform_registry import platform_registry
+def _loaded_discord_adapter_classes() -> list:
+    """Every DiscordAdapter class object currently imported.
 
-    entry = platform_registry.get("discord")
-    if entry is None or getattr(entry, "standalone_sender_fn", None) is None:
-        raise RuntimeError("discord platform entry has no standalone_sender_fn")
-    if getattr(entry.standalone_sender_fn, _MARK, False):
-        return
+    The Discord adapter ships as a *directory plugin* (``plugins/platforms/discord``
+    with ``kind: platform``), so the loader imports it as ``hermes_plugins
+    .discord_platform`` — and, for every profile after the first to claim that
+    name, as ``hermes_plugins.discord_platform__home_<digest>``.  Each is a
+    separate module object with its own class.  Importing
+    ``plugins.platforms.discord.adapter`` by its in-tree path therefore yields a
+    class the gateway never instantiates, which is why this seam silently did
+    nothing on a multi-profile install.
+    """
+    import sys
 
-    _orig_standalone = entry.standalone_sender_fn
+    found = {}
+    for name, module in list(sys.modules.items()):
+        if module is None or "discord" not in name or not name.endswith(".adapter"):
+            continue
+        cls = getattr(module, "DiscordAdapter", None)
+        if isinstance(cls, type):
+            found.setdefault(id(cls), cls)
+    return list(found.values())
 
-    async def standalone_sender_fn(pconfig, chat_id, message, **kwargs):
-        try:
-            message = _tr(message)
-            if kwargs.get("caption"):
-                kwargs["caption"] = _tr(kwargs["caption"])
-        except Exception:
-            logger.debug("hermes-korean-ui: standalone rewrite skipped", exc_info=True)
-        return await _orig_standalone(pconfig, chat_id, message, **kwargs)
 
-    setattr(standalone_sender_fn, _MARK, True)
-    try:
-        entry.standalone_sender_fn = standalone_sender_fn
-    except Exception:
-        # Frozen dataclass / namedtuple entry — fall back to replacing the
-        # module-level function the registry captured at import time.
-        import plugins.platforms.discord.adapter as da
-        da._standalone_send = standalone_sender_fn
+def _wrap_platform_entry(entry) -> None:
+    """Patch the adapter class an entry builds, and its standalone cron sender."""
+    factory = getattr(entry, "adapter_factory", None)
+    if factory is not None and not getattr(factory, _MARK, False):
+        def adapter_factory(config, _orig=factory):
+            adapter = _orig(config)
+            try:
+                _patch_adapter_class(type(adapter))
+            except Exception:
+                logger.debug("hermes-korean-ui: adapter patch skipped", exc_info=True)
+            return adapter
+
+        setattr(adapter_factory, _MARK, True)
+        with contextlib.suppress(Exception):
+            entry.adapter_factory = adapter_factory
+
+    sender = getattr(entry, "standalone_sender_fn", None)
+    if sender is not None and not getattr(sender, _MARK, False):
+        async def standalone_sender_fn(pconfig, chat_id, message, _orig=sender, **kwargs):
+            try:
+                message = _tr(message)
+                if kwargs.get("caption"):
+                    kwargs["caption"] = _tr(kwargs["caption"])
+            except Exception:
+                logger.debug("hermes-korean-ui: standalone rewrite skipped", exc_info=True)
+            return await _orig(pconfig, chat_id, message, **kwargs)
+
+        setattr(standalone_sender_fn, _MARK, True)
+        with contextlib.suppress(Exception):
+            entry.standalone_sender_fn = standalone_sender_fn
+
+
+def _patch_discord_sends() -> None:
+    """Cover every Discord adapter class, whenever it appears.
+
+    Three lanes, because plugin load order is not guaranteed and one gateway
+    process serves every profile:
+
+      1. classes already imported when we run;
+      2. entries already in the platform registry (any scope);
+      3. ``PlatformRegistry.register`` itself, for the profiles whose Discord
+         plugin loads after this one.
+    """
+    from gateway.platform_registry import PlatformRegistry, platform_registry
+
+    for cls in _loaded_discord_adapter_classes():
+        _patch_adapter_class(cls)
+
+    for entry in _registered_discord_entries(platform_registry):
+        _wrap_platform_entry(entry)
+
+    # Process-global, so only the first profile's plugin instance installs it.
+    if not getattr(PlatformRegistry, _MARK, False):
+        _orig_register = PlatformRegistry.register
+
+        def register(self, entry, **kwargs):
+            try:
+                if getattr(entry, "name", "") == "discord":
+                    _wrap_platform_entry(entry)
+            except Exception:
+                logger.debug("hermes-korean-ui: registry hook skipped", exc_info=True)
+            return _orig_register(self, entry, **kwargs)
+
+        PlatformRegistry.register = register
+        setattr(PlatformRegistry, _MARK, True)
+
+
+def _registered_discord_entries(registry) -> list:
+    """The "discord" entry from the process-global map and from every profile scope."""
+    entries = []
+    with contextlib.suppress(Exception):
+        maps = [registry._entries] + list(registry._scoped_entries.values())
+        for scope_map in maps:
+            entry = scope_map.get("discord")
+            if entry is not None:
+                entries.append(entry)
+    return entries
 
 
 # ---------------------------------------------------------------------------
@@ -318,8 +475,9 @@ _PATCHES = (
     ("tool verbs", _patch_tool_verbs),
     ("cron delivery wrapper", _patch_cron_delivery),
     ("background review", _patch_background_review),
+    ("approval deadline line", _patch_approval_deadline_line),
+    # Covers the live adapter classes and the standalone (cron) sender alike.
     ("discord send paths", _patch_discord_sends),
-    ("discord standalone (cron) send", _patch_discord_standalone),
 )
 
 
