@@ -56,6 +56,26 @@ TOOL_VERBS_KO: dict[str, str] = {
 }
 
 # ---------------------------------------------------------------------------
+# 1b. Tool NAMES for tools upstream has no curated verb for.
+#
+# ``_TOOL_VERBS`` is "curated built-ins only" — a plugin/MCP tool or a newer
+# built-in falls back to the raw tool name, which is what puts "⚙️ tool_search…"
+# on Discord.  These are substituted into the progress line's head only, so the
+# preview, command and arguments that follow are untouched.  A tool missing from
+# this table keeps its English name; nothing breaks.
+# ---------------------------------------------------------------------------
+TOOL_NAMES_KO: dict[str, str] = {
+    "discord": "디스코드",
+    "discord_admin": "디스코드 관리",
+    "tool_search": "툴 검색",
+    "tool_describe": "툴 설명",
+    "tool_call": "툴 호출",
+    "send_message": "메시지 전송",
+    "kanban": "칸반",
+    "proc": "프로세스",
+}
+
+# ---------------------------------------------------------------------------
 # 2. Cron delivery wrapper  (cron/scheduler.py::_deliver_result)
 #    Replaces upstream's English header/footer whenever a wrapper is emitted
 #    at all (cron.wrap_response, default true).

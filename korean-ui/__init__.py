@@ -8,15 +8,22 @@ bots actually surface on Discord — the cron delivery wrapper, the
 ``💾 Self-improvement review`` notice, the ``⏰ Scheduling update`` tool label,
 gateway lifecycle bumps — is a hardcoded English f-string.
 
-This plugin translates those at four seams, all of which are module-global
-lookups patched in place (so import order does not matter):
+This plugin translates those at these seams:
 
   1. ``agent.display._TOOL_VERBS``            — friendly tool labels
+  1b. the tool-progress renderers             — the bare tool name upstream
+                                                falls back to when a tool has
+                                                no curated verb
   2. ``cron.scheduler._deliver_result``       — cron delivery wrapper
   3. ``agent.background_review
          .summarize_background_review_actions`` — 💾 review action items
-  4. ``DiscordAdapter.send``                  — fixed system notices, matched
-                                                on anchored patterns only
+  4. every live ``DiscordAdapter``            — fixed system notices, matched
+                                                on anchored patterns only, plus
+                                                the exec-approval prompt
+
+Most are module-global lookups, so import order does not matter.  The adapter
+is the exception: it is a per-profile directory plugin, so its classes are
+found dynamically and the platform registry is hooked for late arrivals.
 
 It lives in ``~/.hermes/plugins-shared/`` (symlinked into each profile's
 ``plugins/``) rather than as a site-packages edit, for the same reason as
@@ -39,6 +46,7 @@ from __future__ import annotations
 import contextlib
 import contextvars
 import logging
+import re
 
 from .strings import (
     APPROVAL_WINDOW_KO,
@@ -48,6 +56,7 @@ from .strings import (
     EXEC_APPROVAL_KO,
     LABEL_KO,
     SEND_REWRITES,
+    TOOL_NAMES_KO,
     TOOL_VERBS_KO,
 )
 
@@ -104,6 +113,79 @@ def _patch_tool_verbs() -> None:
     display._TOOL_VERBS_FOR_CONNECTOR = frozenset()
 
     setattr(display, _MARK, True)
+
+
+# ---------------------------------------------------------------------------
+# 1b. Tool-progress head: "⚙️ tool_search..." -> "⚙️ 툴 검색..."
+#
+# Three renderers fall back to the bare tool name — no preview, no curated verb,
+# and the terminal code-block header — and all three build it as
+# ``f"{emoji} {tool_name}"`` at the very start of the line.  So the head is
+# rewritten on the way out instead of reproducing each branch: anchored at the
+# start and matched against that exact tool's name, so a preview, a command or
+# an argument that happens to repeat the name is never touched.
+# ---------------------------------------------------------------------------
+
+def _localize_tool_head(text, tool_name: str):
+    """Swap a leading ``<emoji> <tool_name>`` for its Korean name."""
+    if not isinstance(text, str) or not tool_name:
+        return text
+    name_ko = TOOL_NAMES_KO.get(tool_name) or TOOL_VERBS_KO.get(tool_name)
+    if not name_ko:
+        return text
+    pattern = re.compile(r"^(\s*\S+[ \t]+)" + re.escape(tool_name) + r"(?![\w-])")
+    return pattern.sub(lambda m: m.group(1) + name_ko, text, count=1)
+
+
+def _wrap_tool_head_renderer(owner, method_name: str, tool_name_arg: str) -> bool:
+    """Patch a renderer so the tool name in its returned line comes out Korean."""
+    import functools
+    import inspect
+
+    original = getattr(owner, method_name, None)
+    if original is None or getattr(original, _MARK, False):
+        return original is not None
+
+    signature = inspect.signature(original)
+
+    @functools.wraps(original)
+    def wrapper(*args, **kwargs):
+        result = original(*args, **kwargs)
+        try:
+            bound = signature.bind(*args, **kwargs)
+            tool_name = bound.arguments.get(tool_name_arg)
+            if not isinstance(tool_name, str):
+                # format_tool_event takes the event, not the name.
+                tool_name = getattr(tool_name, "tool_name", None)
+            return _localize_tool_head(result, tool_name)
+        except Exception:
+            logger.debug("hermes-korean-ui: %s rewrite skipped", method_name, exc_info=True)
+            return result
+
+    setattr(wrapper, _MARK, True)
+    setattr(owner, method_name, wrapper)
+    return True
+
+
+def _patch_tool_progress_names() -> None:
+    from gateway import run_turn_runner
+    from gateway.platforms.base import BasePlatformAdapter
+
+    # The progress builder's owning class is located by attribute rather than by
+    # name so an upstream split/rename degrades to a warning, not a crash.
+    owners = [
+        obj
+        for obj in vars(run_turn_runner).values()
+        if isinstance(obj, type) and "_progress_build_message" in vars(obj)
+    ]
+    if not owners:
+        logger.warning(
+            "hermes-korean-ui: no _progress_build_message owner (tool names left in English)"
+        )
+    for owner in owners:
+        _wrap_tool_head_renderer(owner, "_progress_build_message", "tool_name")
+
+    _wrap_tool_head_renderer(BasePlatformAdapter, "format_tool_event", "event")
 
 
 # ---------------------------------------------------------------------------
@@ -473,6 +555,7 @@ def _registered_discord_entries(registry) -> list:
 
 _PATCHES = (
     ("tool verbs", _patch_tool_verbs),
+    ("tool progress names", _patch_tool_progress_names),
     ("cron delivery wrapper", _patch_cron_delivery),
     ("background review", _patch_background_review),
     ("approval deadline line", _patch_approval_deadline_line),

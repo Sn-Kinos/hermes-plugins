@@ -43,6 +43,7 @@ monkeypatch로 동작합니다. 대부분은 module-global 조회라 import 순�
 | seam | 대상 |
 |---|---|
 | `agent.display._TOOL_VERBS` | 친근한 툴 라벨 24종 |
+| `TurnRunner._progress_build_message` · `BasePlatformAdapter.format_tool_event` | 업스트림에 라벨이 없는 툴의 이름 (`⚙️ tool_search…`) |
 | `cron.scheduler._deliver_result` + `cron.scheduler.load_config` | 크론 배달 헤더/푸터 (영어 래퍼 대체) |
 | `agent.background_review.summarize_background_review_actions` | `💾` 알림 항목 |
 | `DiscordAdapter.send` / `send_clarify` / `send_slash_confirm` / `send_exec_approval` / `send_update_prompt` / `send_choice_picker` | 고정 시스템 문구 |
@@ -127,6 +128,7 @@ cron:
 | `BG_ACTION_REWRITES` | `💾` 알림 항목 |
 | `SEND_REWRITES` | 고정 시스템 문구 |
 | `LABEL_KO` | 버튼 라벨 · 승인 사유 (완전일치) |
+| `TOOL_NAMES_KO` | 업스트림 라벨이 없는 툴 이름 |
 | `EXEC_APPROVAL_KO` | 실행 승인 프롬프트 본문 |
 | `DEADLINE_LINE_KO` · `APPROVAL_WINDOW_KO` | 승인 마감 안내 줄 |
 
