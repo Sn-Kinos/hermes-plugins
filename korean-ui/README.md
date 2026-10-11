@@ -27,11 +27,15 @@ gateway 슬래시 응답이 한국어가 됩니다.
 |---|---|
 | 크론 배달 헤더/푸터 | `cron/scheduler_delivery.py`에 생 f-string, 카탈로그에 `cron` 섹션 자체가 없음 |
 | 제공자 오류·재시도·폴백·압축 (66건) | `agent/turn_recovery.py` 등에 하드코딩 그대로 |
+| 바쁠 때 첫 안내 4종 | `agent/onboarding.py` 리터럴 |
 | 디스코드 승인 버튼 라벨 | `label="Approve Once"` 리터럴 |
 | 플러그인 툴 이름 | 업스트림 동사는 큐레이션된 빌트인만 |
 
 업스트림이 새로 번역한 영역은 **여기서 지우는 것**이 원칙입니다. 두 곳에서 번역하면
-문구가 갈립니다.
+문구가 갈립니다. 업그레이드 후 규칙마다 원문이 지금 어디 있는지 확인해서 정리합니다:
+소스에 리터럴로 남아 있으면 유지, 카탈로그(`locales/en.yaml`)로 옮겨졌으면 삭제,
+어디에도 없거나 stdout(`_vprint` 계열)으로만 나가면 삭제. 2026-10-11 정리에서
+`SEND_REWRITES` 155 → 77, `LABEL_KO` 18 → 13이 됐고 채팅 도달 커버리지 손실은 0건입니다.
 
 ## 설치
 
@@ -54,13 +58,9 @@ monkeypatch로 동작합니다. 대부분은 module-global 조회라 import 순�
 
 | seam | 대상 |
 |---|---|
-| `agent.display._TOOL_VERBS` | 친근한 툴 라벨 24종 |
 | `TurnRunner._progress_build_message` · `BasePlatformAdapter.format_tool_event` | 업스트림에 라벨이 없는 툴의 이름 (`⚙️ tool_search…`) |
 | `cron.scheduler._deliver_result` + `cron.scheduler.load_config` | 크론 배달 헤더/푸터 (영어 래퍼 대체) |
-| `agent.background_review.summarize_background_review_actions` | `💾` 알림 항목 |
-| `DiscordAdapter.send` / `send_clarify` / `send_slash_confirm` / `send_exec_approval` / `send_update_prompt` / `send_choice_picker` | 고정 시스템 문구 |
-| `DiscordAdapter._EA_HEADER` / `_EA_REASON_LABEL` / `_EA_SMART_DENY_LINE` | 실행 승인 프롬프트 본문 |
-| `gateway.platforms.base.format_approval_deadline_line` | 승인 마감 안내 줄 |
+| `DiscordAdapter.send` / `send_clarify` / `send_slash_confirm` / `send_exec_approval` / `send_update_prompt` / `send_choice_picker` | 업스트림이 하드코딩한 시스템 문구, 버튼 라벨, 승인 사유 |
 | `PlatformEntry.adapter_factory` / `.standalone_sender_fn` (모든 scope) | 늦게 로드되는 프로필, 크론 HTTP 직행 경로 |
 
 > **어댑터 클래스는 프로필마다 다릅니다.** Discord 어댑터는 `kind: platform` 디렉토리
@@ -143,14 +143,10 @@ tpl("❌ Rate limited after {} retries — {}", "❌ {0}회 재시도 후 속도
 
 | 테이블 | 용도 |
 |---|---|
-| `TOOL_VERBS_KO` | 툴 라벨 |
 | `CRON_WRAP_KO` | 크론 래퍼 템플릿 |
-| `BG_ACTION_REWRITES` | `💾` 알림 항목 |
 | `SEND_REWRITES` | 고정 시스템 문구 (제공자 오류·재시도 포함) |
 | `LABEL_KO` | 버튼 라벨 · 승인 사유 (완전일치) |
 | `TOOL_NAMES_KO` | 업스트림 라벨이 없는 툴 이름 |
-| `EXEC_APPROVAL_KO` | 실행 승인 프롬프트 본문 |
-| `DEADLINE_LINE_KO` · `APPROVAL_WINDOW_KO` | 승인 마감 안내 줄 |
 
 ## 호환성
 

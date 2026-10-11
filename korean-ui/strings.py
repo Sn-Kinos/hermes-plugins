@@ -58,9 +58,10 @@ def tpl(template: str, korean: str) -> tuple[re.Pattern, str]:
 # head only, so the preview, command and arguments after it are untouched, and
 # a tool missing from this table simply keeps its English name.
 #
-# ``tool_search`` / ``tool_describe`` / ``tool_call`` are kept as a backstop:
-# 0.21.5 added ``display.bridge_generating.*`` for them, and when that renders
-# the head is already Korean, so the entry below just never matches.
+# ``tool_search`` / ``tool_describe`` / ``tool_call`` are NOT duplicates of
+# upstream's ``display.bridge_generating.*``: that label is only used on the CLI
+# path (agent/display.py).  The gateway's progress line is
+# ``t("gateway.progress.tool_pending", tool=tool_name)`` — the raw name.
 # ---------------------------------------------------------------------------
 TOOL_NAMES_KO: dict[str, str] = {
     "discord": "디스코드",
@@ -95,196 +96,26 @@ CRON_WRAP_KO = (
 # the same lead-in must come before their shorter prefix.
 # ---------------------------------------------------------------------------
 SEND_REWRITES: list[tuple[re.Pattern, str]] = [
-
-    # ---- background review -------------------------------------------------
-    (re.compile(r"^💾 Self-improvement review: "), "💾 자기개선 검토: "),
-
-    # ---- long-running turn heartbeat --------------------------------------
-    (re.compile(r"^⏳ Working — (?P<m>\d+) min\b"), "⏳ 작업 중 — \\g<m>분"),
-
-    # ---- gateway busy / queue states --------------------------------------
-    (re.compile(r"^⏳ Gateway restarting — queued for the next turn after it comes back\."),
-     "⏳ 게이트웨이 재시작 중 — 돌아온 뒤 다음 턴으로 예약했습니다."),
-    (re.compile(r"^⏳ Gateway shutting down — queued for the next turn after it comes back\."),
-     "⏳ 게이트웨이 종료 중 — 돌아온 뒤 다음 턴으로 예약했습니다."),
-    (re.compile(r"^⏳ Gateway is restarting and is not accepting another turn right now\."),
-     "⏳ 게이트웨이가 재시작 중이라 지금은 새 턴을 받을 수 없습니다."),
-    (re.compile(r"^⏳ Gateway is shutting down and is not accepting another turn right now\."),
-     "⏳ 게이트웨이가 종료 중이라 지금은 새 턴을 받을 수 없습니다."),
-    (re.compile(r"^⏳ Gateway is restarting and is not accepting new work right now\."),
-     "⏳ 게이트웨이가 재시작 중이라 지금은 새 작업을 받을 수 없습니다."),
-    (re.compile(r"^⏳ Gateway is shutting down and is not accepting new work right now\."),
-     "⏳ 게이트웨이가 종료 중이라 지금은 새 작업을 받을 수 없습니다."),
-    (re.compile(r"^⏳ Subagent working(?P<d>[^—]*)— your message is queued for when it finishes "
-                r"\(use /stop to cancel everything\)\."),
-     "⏳ 서브에이전트 작업 중\\g<d>— 끝나면 처리하도록 메시지를 대기열에 넣었습니다 "
-     "(전부 취소하려면 /stop)."),
-    (re.compile(r"^⏳ Compressing context(?P<d>[^—]*)— your message is queued for when it finishes "
-                r"\(use /stop to cancel everything\)\."),
-     "⏳ 컨텍스트 압축 중\\g<d>— 끝나면 처리하도록 메시지를 대기열에 넣었습니다 "
-     "(전부 취소하려면 /stop)."),
-    (re.compile(r"^⏳ Queued for the next turn(?P<d>.*?)\. I'll respond once the current task finishes\."),
-     "⏳ 다음 턴으로 예약했습니다\\g<d>. 현재 작업이 끝나면 답변할게요."),
-    (re.compile(r"^⏳ Agent is running — `(?P<c>[^`]*)` can't run mid-turn\. "
-                r"Wait for the current response or `/stop` first\."),
-     "⏳ 에이전트 실행 중 — `\\g<c>`는 턴 중간에 실행할 수 없습니다. "
-     "현재 응답을 기다리거나 먼저 `/stop`을 보내세요."),
-    (re.compile(r"^⏳ This agent is draining for a maintenance action and isn't accepting new turns "
-                r"right now\. It'll be back in a moment — please resend shortly\."),
-     "⏳ 유지보수 작업으로 이 에이전트가 정리 중이라 지금은 새 턴을 받지 않습니다. "
-     "곧 돌아오니 잠시 후 다시 보내주세요."),
-
-    # ---- gateway lifecycle -------------------------------------------------
-    (re.compile(r"^♻️? Gateway restarted successfully\. Your session continues\."),
-     "♻️ 게이트웨이 재시작 완료. 세션은 그대로 이어집니다."),
-    (re.compile(r"^♻️? Gateway online — Hermes is back and ready\."),
-     "♻️ 게이트웨이 온라인 — Hermes 준비 완료."),
-    (re.compile(r"^⚠️ Gateway (?P<a>restarting|shutting down|restart failed) — "),
-     "⚠️ 게이트웨이 \\g<a> — "),
-
-    # ---- self-update -------------------------------------------------------
-    (re.compile(r"^✅ Hermes update finished successfully\."), "✅ Hermes 업데이트 완료."),
-    (re.compile(r"^✅ Hermes update finished\."), "✅ Hermes 업데이트 완료."),
-    (re.compile(r"^❌ Hermes update timed out after 30 minutes\."),
-     "❌ Hermes 업데이트가 30분 만에 시간 초과됐습니다."),
-    (re.compile(r"^❌ Hermes update failed \(exit code (?P<c>[^)]*)\)\."),
-     "❌ Hermes 업데이트 실패 (종료 코드 \\g<c>)."),
-    (re.compile(r"^❌ Hermes update failed\. Check the gateway logs or run `hermes update` "
-                r"manually for details\."),
-     "❌ Hermes 업데이트 실패. 게이트웨이 로그를 확인하거나 `hermes update`를 직접 실행해 보세요."),
-    (re.compile(r"^❌ Hermes update failed\."), "❌ Hermes 업데이트 실패."),
-
-    # ---- background terminal process watcher ------------------------------
-    (re.compile(r"^\[Background process (?P<s>\S+) finished with exit code (?P<c>\S+)~ "
-                r"Here's the final output:"),
-     "[백그라운드 프로세스 \\g<s> 종료 (코드 \\g<c>)~ 최종 출력:"),
-    (re.compile(r"^\[Background process (?P<s>\S+) is still running~ New output:"),
-     "[백그라운드 프로세스 \\g<s> 실행 중~ 새 출력:"),
-
-    # ---- background tasks --------------------------------------------------
-    (re.compile(r"^✅ Background task complete\nPrompt:"), "✅ 백그라운드 작업 완료\n요청:"),
-    (re.compile(r"^❌ Background task (?P<t>\S+) failed: no provider credentials configured\."),
-     "❌ 백그라운드 작업 \\g<t> 실패: 제공자 자격 증명이 설정되지 않았습니다."),
-    (re.compile(r"^❌ Background task (?P<t>\S+) failed: "), "❌ 백그라운드 작업 \\g<t> 실패: "),
-
-    # ---- turn / session errors --------------------------------------------
-    (re.compile(r"^⚠️ Session too large for the model's context window\.\n"
-                r"Use /compact to compress the conversation, or /reset to start fresh\."),
-     "⚠️ 세션이 모델의 컨텍스트 창보다 큽니다.\n"
-     "/compact로 대화를 압축하거나 /reset으로 새로 시작하세요."),
-    (re.compile(r"^⚠️ Your message was interrupted before processing started "
-                r"\(likely by a recent /stop\)\. Please send it again\."),
-     "⚠️ 처리가 시작되기 전에 메시지가 중단됐습니다 (최근 /stop 때문일 가능성이 높습니다). "
-     "다시 보내주세요."),
-    (re.compile(r"^⚠️ Processing completed but no response was generated\. "
-                r"This may be a transient error — try sending your message again\."),
-     "⚠️ 처리는 끝났지만 응답이 생성되지 않았습니다. "
-     "일시적인 오류일 수 있으니 메시지를 다시 보내보세요."),
-    (re.compile(r"^⚠️ Your message wasn't processed \(the previous turn was still being cleaned up\)\. "
-                r"Please send it again\."),
-     "⚠️ 메시지가 처리되지 않았습니다 (이전 턴이 아직 정리 중이었습니다). 다시 보내주세요."),
-    (re.compile(r"^⚠️ Processing stopped: (?P<e>.*?)\. Try again\.$", re.S),
-     "⚠️ 처리가 중단됐습니다: \\g<e>. 다시 시도해 주세요."),
-    (re.compile(r"^⚠️ The model returned no response after processing tool results\. "
-                r"This can happen with some models — try again or rephrase your question\."),
-     "⚠️ 툴 결과를 처리한 뒤 모델이 응답을 반환하지 않았습니다. "
-     "일부 모델에서 생길 수 있으니 다시 시도하거나 질문을 바꿔보세요."),
-    (re.compile(r"^⚠️ Context compression aborted \((?P<e>[^)]*)\)\. No messages were dropped — "
-                r"conversation is unchanged\."),
-     "⚠️ 컨텍스트 압축이 중단됐습니다 (\\g<e>). 삭제된 메시지는 없고 대화는 그대로입니다."),
-
     # ---- provider errors ---------------------------------------------------
-    (re.compile(r"^⚠️ Provider authentication failed\. Check the configured credentials; "
-                r"raw provider details are in the gateway logs\."),
-     "⚠️ 제공자 인증에 실패했습니다. 설정된 자격 증명을 확인하세요. "
-     "제공자의 원본 오류는 게이트웨이 로그에 있습니다."),
-    (re.compile(r"^⚠️ Provider authentication failed: "), "⚠️ 제공자 인증 실패: "),
-    (re.compile(r"^⚠️ The model provider rejected the request\. I kept the raw provider error out of "
-                r"chat; check gateway logs for details or try rephrasing\."),
-     "⚠️ 모델 제공자가 요청을 거부했습니다. 원본 오류는 채팅에 싣지 않았으니 "
-     "게이트웨이 로그를 확인하거나 표현을 바꿔보세요."),
-    (re.compile(r"^⚠️ The model provider failed after retries\. I kept raw provider details out of "
-                r"chat; check gateway logs for diagnostics\."),
-     "⚠️ 재시도 후에도 모델 제공자가 실패했습니다. 원본 오류는 채팅에 싣지 않았으니 "
-     "게이트웨이 로그를 확인하세요."),
-    (re.compile(r"^⏱️ The model provider is rate-limiting requests\. "
-                r"Please wait a moment and try again\."),
-     "⏱️ 모델 제공자가 요청 속도를 제한하고 있습니다. 잠시 후 다시 시도해 주세요."),
     (re.compile(r"^⚠️ Billing or credits exhausted — switching to fallback provider\.\.\."),
      "⚠️ 청구 또는 크레딧 소진 — 폴백 제공자로 전환합니다..."),
 
     # ---- credits notices ---------------------------------------------------
-    (re.compile(r"^(?P<g>[⚠•]) Credits (?P<p>\d+)% used · \$(?P<c>\S+) cap"),
-     "\\g<g> 크레딧 \\g<p>% 사용 · $\\g<c> 한도"),
     (re.compile(r"^✕ Credit access paused · run /topup to top up"),
      "✕ 크레딧 사용 중지됨 · /topup으로 충전하세요"),
     (re.compile(r"^✓ Credit access restored"), "✓ 크레딧 사용 재개됨"),
 
-    # ---- permissions / admin ----------------------------------------------
-    # The {suffix} is a second English sentence built separately — both
-    # variants are folded into the pattern so no English tail survives.
-    (re.compile(r"^⛔ /(?P<c>\S+) is admin-only here\. You can run: (?P<l>.*?)\. "
-                r"Use /whoami for the full list\.", re.S),
-     "⛔ /\\g<c> 명령은 여기서 관리자 전용입니다. 사용 가능한 명령: \\g<l>. "
-     "전체 목록은 /whoami로 확인하세요."),
-    (re.compile(r"^⛔ /(?P<c>\S+) is admin-only here\. No slash commands are enabled for "
-                r"non-admins on this platform\. Ask an admin to add you to allow_admin_from "
-                r"or to set user_allowed_commands\."),
-     "⛔ /\\g<c> 명령은 여기서 관리자 전용입니다. 이 플랫폼에서는 비관리자에게 허용된 슬래시 "
-     "명령이 없습니다. 관리자에게 allow_admin_from에 추가하거나 user_allowed_commands를 "
-     "설정해 달라고 요청하세요."),
-    (re.compile(r"^⛔ /(?P<c>\S+) is admin-only here\. "), "⛔ /\\g<c> 명령은 여기서 관리자 전용입니다. "),
-
     # ---- approval prompts --------------------------------------------------
-    (re.compile(r"^⚠️ \*\*Dangerous command requires approval:\*\*"), "⚠️ **승인이 필요한 위험 명령:**"),
-    (re.compile(r"^⚠️ \*\*Smart DENY — owner override for one operation:\*\*"),
-     "⚠️ **스마트 거부 — 이 작업 한 번만 소유자 권한으로 허용:**"),
-    (re.compile(r"^⚠️ \*?\*?Command Approval Required\*?\*?"), "⚠️ **명령 승인 필요**"),
-    (re.compile(r"^⚠️ \*\*Confirm /(?P<c>\S+?)\*\*"), "⚠️ **/\\g<c> 확인**"),
-    (re.compile(r"^⚠️ \*?\*?Expensive Model Warning\*?\*?"), "⚠️ **고비용 모델 경고**"),
     (re.compile(r"^⚠️ This action is potentially dangerous \((?P<d>[^)]*)\)\. "),
      "⚠️ 이 작업은 위험할 수 있습니다 (\\g<d>). "),
     (re.compile(r"^⚠️ (?P<d>.*?)\. Asking the user for approval\.", re.S),
      "⚠️ \\g<d>. 사용자에게 승인을 요청합니다."),
 
     # ---- steer / misc gateway ---------------------------------------------
-    (re.compile(r"^⚠️ Steer failed: "), "⚠️ 조정(steer) 실패: "),
-    (re.compile(r"^❌ Could not load config: "), "❌ 설정을 불러오지 못했습니다: "),
     (re.compile(r"^❌ Failed to initialize agent: "), "❌ 에이전트 초기화 실패: "),
     (re.compile(r"^❌ Error handling confirmation: "), "❌ 확인 처리 중 오류: "),
     (re.compile(r"^✅ Enabled toolsets: "), "✅ 활성 툴셋: "),
-    (re.compile(r"^🚫 Disabled toolsets: "), "🚫 비활성 툴셋: "),
     (re.compile(r"^❌ Disabled toolsets: "), "❌ 비활성 툴셋: "),
-
-    # ---- turn-completion explainer ----------------------------------------
-    (re.compile(r"^⚠️ No reply: the model returned empty content after retries and any fallback "
-                r"providers\. Try `continue`, switch model/provider, or inspect the tool output above\."),
-     "⚠️ 응답 없음: 재시도와 폴백 제공자를 모두 거쳤는데도 모델이 빈 응답을 반환했습니다. "
-     "`continue`를 보내거나 모델/제공자를 바꾸거나, 위의 툴 출력을 확인해 보세요."),
-    (re.compile(r"^⚠️ No reply: all API retries were exhausted before a response was produced "
-                r"\(provider errors / rate limits\)\. Try `continue` or switch provider\."),
-     "⚠️ 응답 없음: 응답이 나오기 전에 API 재시도가 모두 소진됐습니다 (제공자 오류 / 요청 한도). "
-     "`continue`를 보내거나 제공자를 바꿔 보세요."),
-    (re.compile(r"^⚠️ No reply: streaming stopped early and only a partial response was recovered\. "
-                r"Send `continue` to resume from where it stopped\."),
-     "⚠️ 응답 없음: 스트리밍이 일찍 끊겨 일부 응답만 복구됐습니다. "
-     "`continue`를 보내면 멈춘 지점부터 이어집니다."),
-    (re.compile(r"^⚠️ No reply: no new content was produced this turn; showing recovered prior "
-                r"context\. Send `continue` to retry\."),
-     "⚠️ 응답 없음: 이번 턴에 새 내용이 생성되지 않아 복구된 이전 맥락을 표시합니다. "
-     "`continue`를 보내면 재시도합니다."),
-    (re.compile(r"^⚠️ No reply: the request was interrupted mid-call before a reply was received\. "
-                r"Send `continue` to retry\."),
-     "⚠️ 응답 없음: 답변을 받기 전에 요청이 중간에 중단됐습니다. `continue`를 보내면 재시도합니다."),
-    (re.compile(r"^⚠️ No reply: the per-turn iteration/cost budget was exhausted before a final "
-                r"answer\. Send `continue` to keep going\."),
-     "⚠️ 응답 없음: 최종 답변 전에 턴당 반복/비용 예산이 소진됐습니다. "
-     "`continue`를 보내면 계속 진행합니다."),
-    (re.compile(r"^⚠️ No reply: the local model's context window was too small to finish\. "
-                r"Increase the context size or use a larger model\."),
-     "⚠️ 응답 없음: 로컬 모델의 컨텍스트 창이 너무 작아 끝내지 못했습니다. "
-     "컨텍스트 크기를 늘리거나 더 큰 모델을 쓰세요."),
-    (re.compile(r"^⚠️ No reply: "), "⚠️ 응답 없음: "),
 
     # ---- provider errors, retries and fallbacks ---------------------------
     # Ordered specific-before-generic: "⚠️ {} — trying fallback..." would
@@ -375,61 +206,12 @@ SEND_REWRITES: list[tuple[re.Pattern, str]] = [
     tpl("⏳ {} retrying in {}s (attempt {}/{})", "⏳ {0} {1}초 후 재시도 ({2}/{3})"),
     tpl("🔄 Retrying API call ({}/2)...", "🔄 API 호출 재시도 ({}/2)..."),
     tpl("🔄 Retrying API call ({}/3)...", "🔄 API 호출 재시도 ({}/3)..."),
-    tpl("⚠️ Stream interrupted mid tool-call — retrying ({}/4)...",
-        "⚠️ 툴 호출 도중 스트림이 끊겼습니다 — 재시도 ({}/4)..."),
 
     # ---- gateway-facing provider copy -------------------------------------
-    tpl("⏱️ The AI model service is rate-limiting requests. Wait a moment, then use /retry.",
-        "⏱️ AI 모델 서비스가 요청 속도를 제한하고 있습니다. 잠시 기다린 뒤 /retry를 사용하세요."),
-    tpl("⏱️ The AI model service's usage limit is reached; it resets in {}. Use /retry after "
-        "that, or /model to switch models.",
-        "⏱️ AI 모델 서비스의 사용 한도에 도달했습니다. {} 후에 초기화됩니다. 그 뒤 /retry를 "
-        "사용하거나 /model로 모델을 바꾸세요."),
-    tpl("⚠️ The connection to the AI model service was interrupted mid-request — usually "
-        "transient. Use /retry to try again; if it keeps happening, run `hermes doctor` on the host.",
-        "⚠️ 요청 도중 AI 모델 서비스와의 연결이 끊겼습니다 — 대개 일시적입니다. /retry로 다시 "
-        "시도하고, 계속 발생하면 호스트에서 `hermes doctor`를 실행하세요."),
-    tpl("⚠️ The AI model service isn't reachable right now — the configured model endpoint is "
-        "not running or is unreachable. Wait a moment and use /retry; if it persists, run "
-        "`hermes doctor` on the host.",
-        "⚠️ 지금 AI 모델 서비스에 연결할 수 없습니다 — 설정된 모델 엔드포인트가 실행 중이 아니거나 "
-        "접근할 수 없습니다. 잠시 후 /retry를 사용하고, 계속되면 호스트에서 `hermes doctor`를 실행하세요."),
-    tpl("⚠️ Hermes could not reach the AI model service (no further detail from the SDK). Use "
-        "/retry to try again; if it persists, run `hermes doctor` on the host.",
-        "⚠️ Hermes가 AI 모델 서비스에 연결하지 못했습니다 (SDK가 추가 정보를 주지 않았습니다). "
-        "/retry로 다시 시도하고, 계속되면 호스트에서 `hermes doctor`를 실행하세요."),
-    tpl("⚠️ The AI model service kept failing. Use /retry to try again, or /model to switch "
-        "models. Details are in the gateway log (`hermes logs`).",
-        "⚠️ AI 모델 서비스가 계속 실패했습니다. /retry로 다시 시도하거나 /model로 모델을 바꾸세요. "
-        "자세한 내용은 게이트웨이 로그(`hermes logs`)에 있습니다."),
-    tpl("⚠️ Something went wrong and I couldn't finish this reply.{} Use /retry to try again, "
-        "or /new to start a fresh conversation. Technical details are in the gateway log "
-        "(`hermes logs`).",
-        "⚠️ 문제가 생겨 이 응답을 끝내지 못했습니다.{} /retry로 다시 시도하거나 /new로 새 대화를 "
-        "시작하세요. 기술적인 내용은 게이트웨이 로그(`hermes logs`)에 있습니다."),
-    tpl("⚠️ I had to stop before finishing{}. Use /retry to try again, or /compress if this "
-        "conversation has grown very long.",
-        "⚠️ 끝내기 전에 중단해야 했습니다{}. /retry로 다시 시도하거나, 대화가 아주 길어졌다면 "
-        "/compress를 사용하세요."),
     tpl("♻️ Recovered reply — the messaging platform's rate limit refused the original, so part "
         "of it may already have arrived above:",
         "♻️ 복구된 응답 — 메신저 플랫폼의 속도 제한으로 원본이 거부됐습니다. 일부는 위에 이미 "
         "도착했을 수 있습니다:"),
-    tpl("❌ Your background task \"{}\" failed before finishing. Send /bg again to retry, or "
-        "/agents to see what is still running.",
-        "❌ 백그라운드 작업 \"{}\"이(가) 끝나기 전에 실패했습니다. /bg를 다시 보내 재시도하거나 "
-        "/agents로 실행 중인 작업을 확인하세요."),
-    tpl("⚠️ Hermes could not create a Discord thread for this message, so the request was not "
-        "processed. Please retry.",
-        "⚠️ 이 메시지에 대한 디스코드 스레드를 만들지 못해 요청이 처리되지 않았습니다. 다시 시도해 주세요."),
-    tpl("✓ {} resumed — retrying on next watcher tick.",
-        "✓ {} 재개됨 — 다음 감시 주기에 재시도합니다."),
-    # Only the trailing sentence is prose; the title and body are built elsewhere
-    # and the slash-command prefix is preserved verbatim.
-    tpl("⚠️ **{}** {} _Text fallback: reply `{}approve` to switch or `{}cancel` to keep the "
-        "current model._",
-        "⚠️ **{0}** {1} _텍스트 대체: 바꾸려면 `{2}approve`, 현재 모델을 유지하려면 "
-        "`{3}cancel`로 답하세요._"),
 
     # ---- compression / context (provider-adjacent) ------------------------
     tpl("⚠ Compression aborted: {}. No messages were dropped — conversation continues "
@@ -482,10 +264,6 @@ SEND_REWRITES: list[tuple[re.Pattern, str]] = [
         "있었을 수 있습니다."),
     tpl("💡 Try /new to start a fresh conversation, or /compress to retry compression.",
         "💡 /new로 새 대화를 시작하거나 /compress로 압축을 다시 시도해 보세요."),
-    tpl("⚠️ Codex app-server compaction did not complete — the thread is unchanged. Check the "
-        "app-server logs, retry /compress, or /reset for a clean session.",
-        "⚠️ Codex app-server 압축이 완료되지 않아 스레드가 그대로입니다. app-server 로그를 "
-        "확인하거나 /compress를 다시 시도하거나 /reset으로 새 세션을 시작하세요."),
     tpl("⚠️ Turn aborted by the liveness watchdog ({}s without activity); lease renewal stopped "
         "so the session can be reclaimed. You can retry your message.",
         "⚠️ 활동이 {}초 동안 없어 liveness 워치독이 턴을 중단했습니다. 세션을 회수할 수 있도록 "
@@ -512,10 +290,6 @@ SEND_REWRITES: list[tuple[re.Pattern, str]] = [
         "⚠ {0}: 업스트림이 이 스킬을 {1}(으)로 옮겼지만, {2}에 있는 수정본을 그대로 뒀습니다 — "
         "업데이트는 반영되지 않습니다. 새 위치로 옮기려면 `hermes skills reset {3} --restore`를 "
         "실행하세요."),
-    tpl("⚠️ Unauthorized Discord slash attempt User: {} ({}) Channel: {} (guild {}) Command: {} "
-        "Reason: {}",
-        "⚠️ 허가되지 않은 디스코드 슬래시 명령 시도 사용자: {0} ({1}) 채널: {2} (길드 {3}) "
-        "명령: {4} 사유: {5}"),
     # Busy-input first-time tips (agent/onboarding.py::_BUSY_INPUT_HINTS_GATEWAY).
     # Literals, not catalog keys — the paired "↪ Redirected …" notice IS in
     # upstream's catalog, these four are not.
@@ -548,23 +322,9 @@ SEND_REWRITES: list[tuple[re.Pattern, str]] = [
         "notice won't appear again.",
         "💡 처음 안내 — 그 툴이 시간이 좀 걸려서 진행 상황을 단계마다 보내고 있어요. 진행 메시지가 "
         "번잡하면 `/verbose`로 모드를 바꾸세요 (all → new → off). 이 안내는 다시 나오지 않습니다."),
-    tpl("⚠ auxiliary.background_review.reasoning_effort='{}' has no effect while the review "
-        "runs on the main model: the fork inherits the conversation's reasoning effort to keep "
-        "the parent's prompt-cache prefix (see memory docs, same-model review reasoning). Route "
-        "the review elsewhere via auxiliary.background_review.provider/model to use a different effort.",
-        "⚠ 배경 검토가 메인 모델에서 실행되는 동안에는 "
-        "auxiliary.background_review.reasoning_effort='{}'가 적용되지 않습니다: 포크가 부모의 "
-        "프롬프트 캐시 접두사를 유지하려고 대화의 추론 강도를 그대로 물려받기 때문입니다. 다른 "
-        "강도를 쓰려면 auxiliary.background_review.provider/model로 검토를 다른 곳으로 보내세요."),
 
     # ---- agent-side warnings ----------------------------------------------
     (re.compile(r"^⚠ Auxiliary (?P<t>[^ ]+) failed: "), "⚠ 보조 작업(\\g<t>) 실패: "),
-    (re.compile(r"^❌ All API retries exhausted with no successful response\."),
-     "❌ API 재시도를 모두 소진했지만 성공한 응답이 없습니다."),
-    (re.compile(r"^❌ Context length exceeded and cannot compress further\."),
-     "❌ 컨텍스트 길이를 초과했고 더 압축할 수 없습니다."),
-    (re.compile(r"^❌ Context overflow, but auto-compaction is disabled"),
-     "❌ 컨텍스트가 넘쳤지만 자동 압축이 비활성화돼 있습니다"),
 ]
 
 # ---------------------------------------------------------------------------
@@ -575,14 +335,9 @@ SEND_REWRITES: list[tuple[re.Pattern, str]] = [
 # ---------------------------------------------------------------------------
 LABEL_KO: dict[str, str] = {
     "✅ Approve": "✅ 승인",
-    "✅ Approve Once": "✅ 한 번만 승인",
-    "✅ Approved.": "✅ 승인됨.",
     "Approve Once": "한 번만 승인",
-    "Approve session": "세션 동안 승인",
     "Always": "항상",
     "Always Approve": "항상 승인",
-    "❌ Deny": "❌ 거부",
-    "❌ Denied.": "❌ 거부됨.",
     "Deny": "거부",
     "❌ Cancel": "❌ 취소",
     "Cancel": "취소",
