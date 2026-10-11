@@ -1,0 +1,5 @@
+name: progress-codeblock
+kind: standalone
+version: 1.0.0
+description: Wraps the gateway's tool-progress bubble in one code block and keeps only the last N entries as a sliding window.
+author: local (kinos)

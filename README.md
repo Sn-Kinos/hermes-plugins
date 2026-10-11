@@ -9,6 +9,7 @@
 |---|---|
 | [`korean-ui/`](korean-ui/) | 하드코딩된 영어 시스템 문구를 한국어로 |
 | [`discord-add-reaction/`](discord-add-reaction/) | `discord` 툴에 `add_reaction` 액션 추가 |
+| [`progress-codeblock/`](progress-codeblock/) | 툴 진행 말풍선을 코드블록 + 최근 N건 윈도우로 |
 
 ## 설치
 
@@ -18,9 +19,11 @@
 ```bash
 hermes plugins install Sn-Kinos/hermes-plugins/korean-ui
 hermes plugins install Sn-Kinos/hermes-plugins/discord-add-reaction
+hermes plugins install Sn-Kinos/hermes-plugins/progress-codeblock
 
 hermes plugins enable hermes-korean-ui
 hermes plugins enable discord-add-reaction
+hermes plugins enable progress-codeblock
 ```
 
 설치 디렉토리 이름은 각 `plugin.yaml`의 `name`을 따르므로 서브디렉토리명과 무관합니다.
