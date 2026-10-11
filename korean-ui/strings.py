@@ -516,6 +516,33 @@ SEND_REWRITES: list[tuple[re.Pattern, str]] = [
         "Reason: {}",
         "⚠️ 허가되지 않은 디스코드 슬래시 명령 시도 사용자: {0} ({1}) 채널: {2} (길드 {3}) "
         "명령: {4} 사유: {5}"),
+    # Busy-input first-time tips (agent/onboarding.py::_BUSY_INPUT_HINTS_GATEWAY).
+    # Literals, not catalog keys — the paired "↪ Redirected …" notice IS in
+    # upstream's catalog, these four are not.
+    tpl("💡 First-time tip — I queued your message instead of interrupting. Send `/busy interrupt` "
+        "to make new messages stop the current task immediately, or `/busy status` to check. This "
+        "notice won't appear again.",
+        "💡 처음 안내 — 작업을 끊지 않고 메시지를 대기열에 넣었어요. 새 메시지가 현재 작업을 바로 "
+        "멈추게 하려면 `/busy interrupt`, 상태를 보려면 `/busy status`를 보내세요. 이 안내는 다시 "
+        "나오지 않아요."),
+    tpl("💡 First-time tip — I steered your message into the current run; it will arrive after the "
+        "next tool call instead of interrupting. Send `/busy interrupt` or `/busy queue` to change "
+        "this, or `/busy status` to check. This notice won't appear again.",
+        "💡 처음 안내 — 메시지를 현재 실행에 끼워 넣었어요. 작업을 끊지 않고 다음 도구 호출 뒤에 "
+        "전달돼요. 바꾸려면 `/busy interrupt`나 `/busy queue`, 상태를 보려면 `/busy status`를 "
+        "보내세요. 이 안내는 다시 나오지 않아요."),
+    tpl("💡 First-time tip — I redirected the current run using your message. Completed work stays "
+        "in context, and `/stop` still cancels the task. Send `/busy queue` to wait for a separate "
+        "turn, or `/busy status` to check. This notice won't appear again.",
+        "💡 처음 안내 — 보내신 메시지로 현재 실행의 방향을 바꿨어요. 끝난 작업은 맥락에 그대로 "
+        "남고, `/stop`으로 작업을 취소할 수 있어요. 별도 턴으로 기다리게 하려면 `/busy queue`, "
+        "상태를 보려면 `/busy status`를 보내세요. 이 안내는 다시 나오지 않아요."),
+    tpl("💡 First-time tip — I just interrupted my current task to answer you. Send `/busy queue` to "
+        "queue follow-ups for after the current task instead, `/busy steer` to inject them mid-run "
+        "without interrupting, or `/busy status` to check. This notice won't appear again.",
+        "💡 처음 안내 — 답하려고 하던 작업을 방금 중단했어요. 이어지는 메시지를 현재 작업 뒤로 "
+        "미루려면 `/busy queue`, 끊지 않고 실행 중에 끼워 넣으려면 `/busy steer`, 상태를 보려면 "
+        "`/busy status`를 보내세요. 이 안내는 다시 나오지 않아요."),
     tpl("💡 First-time tip — that tool took a while and I'm streaming every step. If the "
         "progress messages feel noisy, send `/verbose` to cycle modes (all → new → off). This "
         "notice won't appear again.",
