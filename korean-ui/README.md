@@ -11,15 +11,27 @@
 
 ## 왜 필요한가
 
-hermes-agent에는 i18n 인프라가 없습니다. `display.language` 설정이 있긴 하지만:
+hermes-agent **0.21.5부터 업스트림에 i18n이 있습니다** (`agent/i18n.py` + `locales/ko.yaml`,
+en.yaml과 같은 3,462개 키의 완역). 따라서 1차 수단은 이 플러그인이 아니라:
 
-- 지원 언어가 `en, zh, ja, de, es, fr, tr, uk` — **한국어가 없습니다**
-- 적용 범위가 승인 프롬프트와 일부 슬래시 커맨드 응답뿐이고, 소스 주석에
-  *"does NOT affect agent responses, log lines, tool outputs"* 라고 명시돼 있습니다
+```bash
+hermes config set display.language ko    # 프로필마다
+```
 
-봇이 디스코드에 실제로 뿌리는 문구는 전부 f-string 하드코딩이라, 설정으로는
-끄는 것(`memory_notifications: off`, `friendly_tool_labels: false`)만 가능하고
-번역은 불가능합니다.
+이것으로 툴 동사, 승인 프롬프트, `💾` 자기개선 리뷰(항목까지), 턴 explainer,
+gateway 슬래시 응답이 한국어가 됩니다.
+
+이 플러그인은 **그 카탈로그가 닿지 않는 것만** 담당합니다:
+
+| 남은 영역 | 왜 |
+|---|---|
+| 크론 배달 헤더/푸터 | `cron/scheduler_delivery.py`에 생 f-string, 카탈로그에 `cron` 섹션 자체가 없음 |
+| 제공자 오류·재시도·폴백·압축 (66건) | `agent/turn_recovery.py` 등에 하드코딩 그대로 |
+| 디스코드 승인 버튼 라벨 | `label="Approve Once"` 리터럴 |
+| 플러그인 툴 이름 | 업스트림 동사는 큐레이션된 빌트인만 |
+
+업스트림이 새로 번역한 영역은 **여기서 지우는 것**이 원칙입니다. 두 곳에서 번역하면
+문구가 갈립니다.
 
 ## 설치
 

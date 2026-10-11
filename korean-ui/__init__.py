@@ -8,22 +8,30 @@ bots actually surface on Discord — the cron delivery wrapper, the
 ``💾 Self-improvement review`` notice, the ``⏰ Scheduling update`` tool label,
 gateway lifecycle bumps — is a hardcoded English f-string.
 
-This plugin translates those at these seams:
+Since 0.21.5 upstream HAS i18n (``agent/i18n.py`` + ``locales/ko.yaml``, a full
+catalog), so ``display.language: ko`` now owns the tool verbs, the approval
+prompt, the 💾 review summary and its action items, the turn explainers and the
+gateway slash replies.  This plugin was trimmed to what that catalog does not
+reach, and it must stay that way: anything upstream localizes should be deleted
+here rather than translated twice.
 
-  1. ``agent.display._TOOL_VERBS``            — friendly tool labels
-  1b. the tool-progress renderers             — the bare tool name upstream
-                                                falls back to when a tool has
-                                                no curated verb
-  2. ``cron.scheduler._deliver_result``       — cron delivery wrapper
-  3. ``agent.background_review
-         .summarize_background_review_actions`` — 💾 review action items
-  4. every live ``DiscordAdapter``            — fixed system notices, matched
-                                                on anchored patterns only, plus
-                                                the exec-approval prompt
+What is left, and why:
 
-Most are module-global lookups, so import order does not matter.  The adapter
-is the exception: it is a per-profile directory plugin, so its classes are
-found dynamically and the platform registry is hooked for late arrivals.
+  1b. the tool-progress renderers  — plugin tools (discord, kanban) have no
+                                     curated verb, so the head still carries
+                                     the raw tool name
+  2.  ``cron.scheduler._deliver_result``
+                                   — the cron header/footer is still a raw
+                                     f-string and the catalogs have no ``cron``
+                                     section at all
+  4.  every live ``DiscordAdapter``
+                                   — the provider-error / retry / fallback /
+                                     compression family is still hardcoded
+                                     English, as are the approval button labels
+
+Most seams are module-global lookups, so import order does not matter.  The
+adapter is the exception: it is a per-profile directory plugin, so its classes
+are found dynamically and the platform registry is hooked for late arrivals.
 
 It lives in ``~/.hermes/plugins-shared/`` (symlinked into each profile's
 ``plugins/``) rather than as a site-packages edit, for the same reason as
@@ -49,15 +57,10 @@ import logging
 import re
 
 from .strings import (
-    APPROVAL_WINDOW_KO,
-    BG_ACTION_REWRITES,
     CRON_WRAP_KO,
-    DEADLINE_LINE_KO,
-    EXEC_APPROVAL_KO,
     LABEL_KO,
     SEND_REWRITES,
     TOOL_NAMES_KO,
-    TOOL_VERBS_KO,
 )
 
 logger = logging.getLogger(__name__)
@@ -75,47 +78,6 @@ def _apply(rewrites, text: str) -> str:
 
 
 # ---------------------------------------------------------------------------
-# 1. Friendly tool labels — "Scheduling update" -> "일정 관리 update"
-# ---------------------------------------------------------------------------
-
-def _patch_tool_verbs() -> None:
-    from agent import display
-
-    if getattr(display, _MARK, False):
-        return
-
-    # Mutate in place: get_tool_verb()/build_tool_label() read the module-level
-    # dict at call time, so this takes effect for already-imported callers.
-    applied_verbs = set()
-    for tool_name, verb_ko in TOOL_VERBS_KO.items():
-        if tool_name in display._TOOL_VERBS:
-            display._TOOL_VERBS[tool_name] = verb_ko
-            applied_verbs.add(verb_ko)
-
-    # Only report a tool whose Korean verb reached NO upstream name.  The
-    # table carries both spellings of the entries upstream renamed in 0.21.x
-    # (cronjob/cronjob_manage, todo/todo_list) so it works on either build —
-    # the unused spelling is expected, not a gap worth warning about.
-    unmatched = sorted(
-        name
-        for name, verb_ko in TOOL_VERBS_KO.items()
-        if name not in display._TOOL_VERBS and verb_ko not in applied_verbs
-    )
-    if unmatched:
-        logger.warning(
-            "hermes-korean-ui: tool verbs not present upstream (left in English): %s",
-            ", ".join(unmatched),
-        )
-
-    # Upstream renders "Searching the web for <query>" for these two.  Korean
-    # puts the object first, so the English " for " connector reads as
-    # "웹 검색 for foo" — drop it and fall back to a plain space.
-    display._TOOL_VERBS_FOR_CONNECTOR = frozenset()
-
-    setattr(display, _MARK, True)
-
-
-# ---------------------------------------------------------------------------
 # 1b. Tool-progress head: "⚙️ tool_search..." -> "⚙️ 툴 검색..."
 #
 # Three renderers fall back to the bare tool name — no preview, no curated verb,
@@ -126,11 +88,27 @@ def _patch_tool_verbs() -> None:
 # an argument that happens to repeat the name is never touched.
 # ---------------------------------------------------------------------------
 
+def _upstream_verb(tool_name: str):
+    """Upstream's localized verb for a curated tool, if it has one.
+
+    Since 0.21.5 the verbs live in ``locales/<lang>.yaml`` (``display.verb.*``),
+    so the terminal code-block header — which still interpolates the raw tool
+    name — can reuse upstream's Korean instead of this plugin keeping its own
+    copy of the same 24 strings.
+    """
+    try:
+        from agent.display import get_tool_verb
+
+        return get_tool_verb(tool_name)
+    except Exception:
+        return None
+
+
 def _localize_tool_head(text, tool_name: str):
     """Swap a leading ``<emoji> <tool_name>`` for its Korean name."""
     if not isinstance(text, str) or not tool_name:
         return text
-    name_ko = TOOL_NAMES_KO.get(tool_name) or TOOL_VERBS_KO.get(tool_name)
+    name_ko = TOOL_NAMES_KO.get(tool_name) or _upstream_verb(tool_name)
     if not name_ko:
         return text
     pattern = re.compile(r"^(\s*\S+[ \t]+)" + re.escape(tool_name) + r"(?![\w-])")
@@ -275,32 +253,6 @@ def _patch_cron_delivery() -> None:
 
 
 # ---------------------------------------------------------------------------
-# 3. Background-review action items (the text after the 💾 prefix)
-# ---------------------------------------------------------------------------
-
-def _patch_background_review() -> None:
-    from agent import background_review
-
-    if getattr(background_review, _MARK, False):
-        return
-
-    _orig_summarize = background_review.summarize_background_review_actions
-
-    def summarize_background_review_actions(*args, **kwargs):
-        actions = _orig_summarize(*args, **kwargs)
-        try:
-            return [_apply(BG_ACTION_REWRITES, str(a)) for a in actions]
-        except Exception:
-            logger.debug("hermes-korean-ui: bg-review rewrite failed", exc_info=True)
-            return actions
-
-    background_review.summarize_background_review_actions = (
-        summarize_background_review_actions
-    )
-    setattr(background_review, _MARK, True)
-
-
-# ---------------------------------------------------------------------------
 # 4. Outgoing text on every Discord delivery path.
 #
 # ``DiscordAdapter.send`` is only ONE of the adapter's outbound methods, and
@@ -315,9 +267,6 @@ def _patch_background_review() -> None:
 # deliberately left untouched.
 # ---------------------------------------------------------------------------
 
-_BG_PREFIX_KO = "💾 자기개선 검토: "
-
-
 def _tr(value):
     """Translate one user-facing string; pass through anything else."""
     if not isinstance(value, str) or not value:
@@ -325,16 +274,7 @@ def _tr(value):
     exact = LABEL_KO.get(value.strip())
     if exact is not None:
         return exact
-    text = _apply(SEND_REWRITES, value)
-    # Safety net: the 💾 review items are normally localized upstream by the
-    # patched summarize_background_review_actions, but the CLI print path and
-    # any future emitter bypass it.  Re-run the item table over the tail so a
-    # Korean prefix is never left with an English body.
-    if text.startswith(_BG_PREFIX_KO):
-        head, _, tail = text.partition(_BG_PREFIX_KO)
-        items = [_apply(BG_ACTION_REWRITES, i.strip()) for i in tail.split(" · ")]
-        text = head + _BG_PREFIX_KO + " · ".join(items)
-    return text
+    return _apply(SEND_REWRITES, value)
 
 
 def _wrap_text_params(cls, method_name: str, params: tuple[str, ...]) -> bool:
@@ -383,56 +323,10 @@ _DISCORD_TEXT_PARAMS: tuple[tuple[str, tuple[str, ...]], ...] = (
 )
 
 
-def _patch_exec_approval(cls) -> None:
-    """Translate the exec-approval prompt.
-
-    Its body never reaches ``send()`` — the adapter assembles it from class
-    attributes and sends the result as an interactive component — so the
-    attributes are replaced directly.  Only the ones upstream still defines are
-    touched, so a rename degrades to English instead of inventing an attribute.
-    """
-    for attr, text_ko in EXEC_APPROVAL_KO.items():
-        if hasattr(cls, attr):
-            setattr(cls, attr, text_ko)
-        else:
-            logger.warning(
-                "hermes-korean-ui: approval prompt has no %s (left in English)", attr
-            )
-
-
-def _patch_approval_deadline_line() -> None:
-    """The "doing nothing means it will NOT run" line.
-
-    ``base.py`` calls ``format_approval_deadline_line`` as a module global, so
-    replacing it on the defining module is enough for every adapter.
-    """
-    from gateway.platforms import base
-
-    if getattr(base, _MARK, False):
-        return
-
-    _orig = base.format_approval_deadline_line
-
-    def format_approval_deadline_line(timeout_s):
-        try:
-            from gateway.platforms.base_exec_approval import format_approval_window
-
-            return DEADLINE_LINE_KO.format(
-                _apply(APPROVAL_WINDOW_KO, format_approval_window(timeout_s))
-            )
-        except Exception:
-            logger.debug("hermes-korean-ui: deadline line skipped", exc_info=True)
-            return _orig(timeout_s)
-
-    base.format_approval_deadline_line = format_approval_deadline_line
-    setattr(base, _MARK, True)
-
-
 def _patch_adapter_class(cls) -> bool:
     """Patch one DiscordAdapter class.  Idempotent per class object."""
     if cls is None or getattr(cls, _MARK, False):
         return False
-    _patch_exec_approval(cls)
     missing = [
         name
         for name, params in _DISCORD_TEXT_PARAMS
@@ -554,11 +448,8 @@ def _registered_discord_entries(registry) -> list:
 # ---------------------------------------------------------------------------
 
 _PATCHES = (
-    ("tool verbs", _patch_tool_verbs),
     ("tool progress names", _patch_tool_progress_names),
     ("cron delivery wrapper", _patch_cron_delivery),
-    ("background review", _patch_background_review),
-    ("approval deadline line", _patch_approval_deadline_line),
     # Covers the live adapter classes and the standalone (cron) sender alike.
     ("discord send paths", _patch_discord_sends),
 )

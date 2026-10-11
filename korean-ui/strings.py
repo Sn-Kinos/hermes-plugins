@@ -50,50 +50,17 @@ def tpl(template: str, korean: str) -> tuple[re.Pattern, str]:
     return re.compile(pattern, re.S), replacement
 
 # ---------------------------------------------------------------------------
-# 1. Friendly tool labels  (agent/display.py::_TOOL_VERBS)
-#
-# Rendered as "<verb> <preview>", e.g. cronjob action=update -> "일정 관리 update".
-# ---------------------------------------------------------------------------
-TOOL_VERBS_KO: dict[str, str] = {
-    "web_search": "웹 검색",
-    "web_extract": "읽는 중",
-    "browser_navigate": "브라우저 이동",
-    "browser_click": "클릭",
-    "browser_type": "입력",
-    "read_file": "읽는 중",
-    "write_file": "쓰는 중",
-    "patch": "수정 중",
-    "search_files": "파일 검색",
-    "terminal": "실행 중",
-    "execute_code": "코드 실행",
-    "image_generate": "이미지 생성",
-    "video_generate": "영상 생성",
-    "text_to_speech": "음성 생성",
-    "vision_analyze": "이미지 확인",
-    "session_search": "지난 대화 검색",
-    "skill_view": "스킬 확인",
-    "skills_list": "스킬 목록",
-    "skill_manage": "스킬 수정",
-    "delegate_task": "작업 위임",
-    # Renamed upstream in 0.21.x (cronjob -> cronjob_manage, todo -> todo_list).
-    # Both spellings are kept so the table works on 0.19.x and 0.21.x alike;
-    # the loader ignores names the running build does not define.
-    "cronjob": "일정 관리",
-    "cronjob_manage": "일정 관리",
-    "clarify": "질문",
-    "memory": "기억 갱신",
-    "todo": "할 일 갱신",
-    "todo_list": "할 일 갱신",
-}
-
-# ---------------------------------------------------------------------------
 # 1b. Tool NAMES for tools upstream has no curated verb for.
 #
-# ``_TOOL_VERBS`` is "curated built-ins only" — a plugin/MCP tool or a newer
-# built-in falls back to the raw tool name, which is what puts "⚙️ tool_search…"
-# on Discord.  These are substituted into the progress line's head only, so the
-# preview, command and arguments that follow are untouched.  A tool missing from
-# this table keeps its English name; nothing breaks.
+# Upstream's verbs cover curated built-ins only (``display.verb.*`` in its
+# locale catalogs); a plugin tool — discord, kanban — still falls back to the
+# raw tool name in the progress line.  These are substituted into that line's
+# head only, so the preview, command and arguments after it are untouched, and
+# a tool missing from this table simply keeps its English name.
+#
+# ``tool_search`` / ``tool_describe`` / ``tool_call`` are kept as a backstop:
+# 0.21.5 added ``display.bridge_generating.*`` for them, and when that renders
+# the head is already Korean, so the entry below just never matches.
 # ---------------------------------------------------------------------------
 TOOL_NAMES_KO: dict[str, str] = {
     "discord": "디스코드",
@@ -118,27 +85,6 @@ CRON_WRAP_KO = (
     "{content}\n\n"
     '이 작업을 멈추거나 관리하려면 메시지를 보내주세요 (예: "{task_name} 알림 중지").'
 )
-
-# ---------------------------------------------------------------------------
-# 3. Background-review action phrases
-#    (agent/background_review.py::summarize_background_review_actions)
-# ---------------------------------------------------------------------------
-BG_ACTION_REWRITES: list[tuple[re.Pattern, str]] = [
-    (re.compile(r"^📝 Skill '(?P<n>[^']*)' patched: (?P<d>.*)$", re.S), "📝 스킬 '\\g<n>' 수정: \\g<d>"),
-    (re.compile(r"^📝 Skill '(?P<n>[^']*)' created: (?P<d>.*)$", re.S), "📝 스킬 '\\g<n>' 생성: \\g<d>"),
-    (re.compile(r"^📝 Skill '(?P<n>[^']*)' rewritten: (?P<d>.*)$", re.S), "📝 스킬 '\\g<n>' 재작성: \\g<d>"),
-    (re.compile(r"^(?P<p>📝 )?Skill '(?P<n>[^']*)' created\.?$"), "\\g<p>스킬 '\\g<n>' 생성됨"),
-    (re.compile(r"^(?P<p>📝 )?Skill '(?P<n>[^']*)' updated\.?$"), "\\g<p>스킬 '\\g<n>' 갱신됨"),
-    (re.compile(r"^(?P<p>📝 )?Skill '(?P<n>[^']*)' improved\.?$"), "\\g<p>스킬 '\\g<n>' 개선됨"),
-    (re.compile(r"^(?P<p>📝 )?Skill '(?P<n>[^']*)' patched\.?$"), "\\g<p>스킬 '\\g<n>' 수정됨"),
-    (re.compile(r"^(?P<p>📝 )?Skill '(?P<n>[^']*)' deleted\.?$"), "\\g<p>스킬 '\\g<n>' 삭제됨"),
-    (re.compile(r"^Memory (?P<g>[➕✏️➖]) ?(?P<d>.*)$", re.S), "기억 \\g<g> \\g<d>"),
-    (re.compile(r"^User profile (?P<g>[➕✏️➖]) ?(?P<d>.*)$", re.S), "사용자 프로필 \\g<g> \\g<d>"),
-    (re.compile(r"^Skill (?P<g>[➕✏️➖]) ?(?P<d>.*)$", re.S), "스킬 \\g<g> \\g<d>"),
-    (re.compile(r"^Memory updated$"), "기억 갱신됨"),
-    (re.compile(r"^User profile updated$"), "사용자 프로필 갱신됨"),
-    (re.compile(r"^Skill updated$"), "스킬 갱신됨"),
-]
 
 # ---------------------------------------------------------------------------
 # 4. Outgoing platform text.
@@ -592,32 +538,6 @@ SEND_REWRITES: list[tuple[re.Pattern, str]] = [
      "❌ 컨텍스트 길이를 초과했고 더 압축할 수 없습니다."),
     (re.compile(r"^❌ Context overflow, but auto-compaction is disabled"),
      "❌ 컨텍스트가 넘쳤지만 자동 압축이 비활성화돼 있습니다"),
-]
-
-# ---------------------------------------------------------------------------
-# 5. Exec-approval prompt.
-#
-# The prompt body is assembled inside the adapter from class attributes, so it
-# never passes the send() seam — these replace the attributes themselves.
-# ``{}`` in DEADLINE_LINE_KO takes the formatted window ("1 minute").
-# ---------------------------------------------------------------------------
-EXEC_APPROVAL_KO: dict[str, str] = {
-    "_EA_HEADER": (
-        "⚠️ **Hermes가 실행 승인을 요청합니다**\n\n"
-        "이 명령을 실행할까요?\n\n"
-        "**요청한 명령:**\n"
-    ),
-    "_EA_REASON_LABEL": "**승인이 필요한 이유:** ",
-    "_EA_SMART_DENY_LINE": "\n\n**스마트 거부:** 소유자 권한은 이 작업 한 번에만 적용됩니다.",
-}
-
-DEADLINE_LINE_KO = "{}간 응답이 없으면 실행되지 **않습니다**."
-
-# Approval window wording ("1 minute" -> "1분"), used inside DEADLINE_LINE_KO.
-APPROVAL_WINDOW_KO: list[tuple[re.Pattern, str]] = [
-    (re.compile(r"^(?P<n>\d+)\s+minutes?$"), "\\g<n>분"),
-    (re.compile(r"^(?P<n>\d+)\s+seconds?$"), "\\g<n>초"),
-    (re.compile(r"^(?P<n>\d+)\s+hours?$"), "\\g<n>시간"),
 ]
 
 # ---------------------------------------------------------------------------
