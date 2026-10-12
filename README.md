@@ -12,6 +12,7 @@
 | [`progress-codeblock/`](progress-codeblock/) | 툴 진행 말풍선을 코드블록 + 최근 N건 윈도우로 |
 | [`mattermost-direct-links/`](mattermost-direct-links/) | Mattermost로 나가는 글에서만 리다이렉트 링크(`qr.kinos.co.kr/mm?q=`)·`mattermost://`를 원래 https 주소로 |
 | [`mattermost-reactions/`](mattermost-reactions/) | Mattermost에서도 Discord처럼 처리 상태를 리액션으로 (`:eyes:` → `:white_check_mark:` / `:x:`) |
+| [`mattermost-thread-followup/`](mattermost-thread-followup/) | Mattermost 스레드에서 멘션 없이도 그 스레드를 맡은 봇이 답하게 |
 
 ## 설치
 

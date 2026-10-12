@@ -1,0 +1,5 @@
+name: mattermost-thread-followup
+kind: standalone
+version: 1.0.0
+description: Lets a Mattermost bot answer un-mentioned human replies in threads it is already part of (default - only the bot that posted last in the thread answers).
+author: local (kinos)
