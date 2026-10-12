@@ -285,8 +285,9 @@ def _tr(value):
 # ---------------------------------------------------------------------------
 # Status-detail slots inside otherwise-Korean catalog messages.
 #
-# The heartbeat ("⏳ 작업 중 — 3분 — 반복 11/60, receiving stream response") and
-# the busy ack ("… (2분 경과, 실행 중: terminal)") are catalog strings, but
+# The heartbeat ("⏳ 작업 중 — 3분 — 반복 11/60, receiving stream response"), the
+# busy ack ("… (2분 경과, 실행 중: terminal)") and the inactivity-timeout reply
+# ("마지막 활동: receiving stream response (…)") are catalog strings, but
 # upstream fills their detail with internal values: a raw tool id or an
 # agent._touch_activity() description.  Both shapes start with the Korean
 # catalog text, so these are still start-anchored, just on the Korean side.
@@ -294,6 +295,9 @@ def _tr(value):
 
 _HEARTBEAT = re.compile(r"^(⏳ 작업 중 — \d+분 — )(?:(반복 \d+(?:/\d+)?)(, ))?(.+)$", re.S)
 _ACK_TOOL = re.compile(r"^([^\n]*?\((?:[^()\n]*, )?실행 중: )([A-Za-z0-9_\-]+)(\))")
+# Inactivity-timeout final response: the same activity string on its 2nd line.
+_TIMEOUT_HEAD = re.compile(r"^⏱️ 에이전트가 \d+분 동안 비활성 상태예요")
+_TIMEOUT_ACTIVITY = re.compile(r"^(마지막 활동: )(.+?)( \(\d+초 전, )", re.M)
 
 
 def _tool_noun(name: str):
@@ -308,6 +312,9 @@ def _activity_ko(text: str) -> str:
 
 
 def _localize_status_detail(text: str) -> str:
+    if _TIMEOUT_HEAD.match(text):
+        return _TIMEOUT_ACTIVITY.sub(
+            lambda m: m.group(1) + _activity_ko(m.group(2)) + m.group(3), text, count=1)
     m = _HEARTBEAT.match(text)
     if m:
         head, iteration, sep, action = m.groups()
