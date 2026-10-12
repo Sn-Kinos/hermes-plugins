@@ -290,38 +290,6 @@ SEND_REWRITES: list[tuple[re.Pattern, str]] = [
         "⚠ {0}: 업스트림이 이 스킬을 {1}(으)로 옮겼지만, {2}에 있는 수정본을 그대로 뒀습니다 — "
         "업데이트는 반영되지 않습니다. 새 위치로 옮기려면 `hermes skills reset {3} --restore`를 "
         "실행하세요."),
-    # Busy-input first-time tips (agent/onboarding.py::_BUSY_INPUT_HINTS_GATEWAY).
-    # Literals, not catalog keys — the paired "↪ Redirected …" notice IS in
-    # upstream's catalog, these four are not.
-    tpl("💡 First-time tip — I queued your message instead of interrupting. Send `/busy interrupt` "
-        "to make new messages stop the current task immediately, or `/busy status` to check. This "
-        "notice won't appear again.",
-        "💡 처음 안내 — 작업을 끊지 않고 메시지를 대기열에 넣었어요. 새 메시지가 현재 작업을 바로 "
-        "멈추게 하려면 `/busy interrupt`, 상태를 보려면 `/busy status`를 보내세요. 이 안내는 다시 "
-        "나오지 않아요."),
-    tpl("💡 First-time tip — I steered your message into the current run; it will arrive after the "
-        "next tool call instead of interrupting. Send `/busy interrupt` or `/busy queue` to change "
-        "this, or `/busy status` to check. This notice won't appear again.",
-        "💡 처음 안내 — 메시지를 현재 실행에 끼워 넣었어요. 작업을 끊지 않고 다음 도구 호출 뒤에 "
-        "전달돼요. 바꾸려면 `/busy interrupt`나 `/busy queue`, 상태를 보려면 `/busy status`를 "
-        "보내세요. 이 안내는 다시 나오지 않아요."),
-    tpl("💡 First-time tip — I redirected the current run using your message. Completed work stays "
-        "in context, and `/stop` still cancels the task. Send `/busy queue` to wait for a separate "
-        "turn, or `/busy status` to check. This notice won't appear again.",
-        "💡 처음 안내 — 보내신 메시지로 현재 실행의 방향을 바꿨어요. 끝난 작업은 맥락에 그대로 "
-        "남고, `/stop`으로 작업을 취소할 수 있어요. 별도 턴으로 기다리게 하려면 `/busy queue`, "
-        "상태를 보려면 `/busy status`를 보내세요. 이 안내는 다시 나오지 않아요."),
-    tpl("💡 First-time tip — I just interrupted my current task to answer you. Send `/busy queue` to "
-        "queue follow-ups for after the current task instead, `/busy steer` to inject them mid-run "
-        "without interrupting, or `/busy status` to check. This notice won't appear again.",
-        "💡 처음 안내 — 답하려고 하던 작업을 방금 중단했어요. 이어지는 메시지를 현재 작업 뒤로 "
-        "미루려면 `/busy queue`, 끊지 않고 실행 중에 끼워 넣으려면 `/busy steer`, 상태를 보려면 "
-        "`/busy status`를 보내세요. 이 안내는 다시 나오지 않아요."),
-    tpl("💡 First-time tip — that tool took a while and I'm streaming every step. If the "
-        "progress messages feel noisy, send `/verbose` to cycle modes (all → new → off). This "
-        "notice won't appear again.",
-        "💡 처음 안내 — 그 툴이 시간이 좀 걸려서 진행 상황을 단계마다 보내고 있어요. 진행 메시지가 "
-        "번잡하면 `/verbose`로 모드를 바꾸세요 (all → new → off). 이 안내는 다시 나오지 않습니다."),
 
     # ---- agent-side warnings ----------------------------------------------
     (re.compile(r"^⚠ Auxiliary (?P<t>[^ ]+) failed: "), "⚠ 보조 작업(\\g<t>) 실패: "),
@@ -352,3 +320,109 @@ LABEL_KO: dict[str, str] = {
     "script execution via heredoc": "heredoc을 통한 스크립트 실행",
     "dangerous command": "위험한 명령",
 }
+
+# ---------------------------------------------------------------------------
+# 7. Busy-input / tool-progress first-time tips (agent/onboarding.py).
+#
+# Replaced at the SOURCE, not matched on output: the busy tip is appended as a
+# second paragraph to the (already Korean) busy ack, and the tool-progress tip
+# lands inside the progress bubble — which progress-codeblock fences — so a
+# start-anchored output rule can never see either.  Keys mirror upstream's
+# _BUSY_INPUT_HINTS_GATEWAY modes.
+# ---------------------------------------------------------------------------
+BUSY_HINTS_KO: dict[str, str] = {
+    "queue": (
+        "💡 처음 안내 — 작업을 끊지 않고 메시지를 대기열에 넣었어요. 새 메시지가 현재 작업을 바로 "
+        "멈추게 하려면 `/busy interrupt`, 상태를 보려면 `/busy status`를 보내세요. 이 안내는 다시 "
+        "나오지 않아요."
+    ),
+    "steer": (
+        "💡 처음 안내 — 메시지를 현재 실행에 끼워 넣었어요. 작업을 끊지 않고 다음 도구 호출 뒤에 "
+        "전달돼요. 바꾸려면 `/busy interrupt`나 `/busy queue`, 상태를 보려면 `/busy status`를 "
+        "보내세요. 이 안내는 다시 나오지 않아요."
+    ),
+    "redirect": (
+        "💡 처음 안내 — 보내신 메시지로 현재 실행의 방향을 바꿨어요. 끝난 작업은 맥락에 그대로 "
+        "남고, `/stop`으로 작업을 취소할 수 있어요. 별도 턴으로 기다리게 하려면 `/busy queue`, "
+        "상태를 보려면 `/busy status`를 보내세요. 이 안내는 다시 나오지 않아요."
+    ),
+}
+BUSY_HINT_DEFAULT_KO = (
+    "💡 처음 안내 — 답하려고 하던 작업을 방금 중단했어요. 이어지는 메시지를 현재 작업 뒤로 "
+    "미루려면 `/busy queue`, 끊지 않고 실행 중에 끼워 넣으려면 `/busy steer`, 상태를 보려면 "
+    "`/busy status`를 보내세요. 이 안내는 다시 나오지 않아요."
+)
+TOOL_PROGRESS_HINT_KO = (
+    "💡 처음 안내 — 그 도구가 시간이 좀 걸려서 진행 상황을 단계마다 보내고 있어요. 진행 메시지가 "
+    "번잡하면 `/verbose`로 모드를 바꾸세요 (all → new → off). 이 안내는 다시 나오지 않아요."
+)
+
+# ---------------------------------------------------------------------------
+# 8. Status-detail slots: the heartbeat's trailing action and the busy ack's
+#    "실행 중: {tool}".  Upstream fills both with internal values never meant
+#    for the catalog — a raw tool id or an agent._touch_activity() string.
+# ---------------------------------------------------------------------------
+# Nouns, not verbs: these fill a "what is running" slot ("실행 중: 터미널").
+# Plugin tools fall back to TOOL_NAMES_KO.
+TOOL_NOUNS_KO: dict[str, str] = {
+    "terminal": "터미널",
+    "read_file": "파일 읽기",
+    "write_file": "파일 쓰기",
+    "patch": "파일 수정",
+    "search_files": "파일 검색",
+    "execute_code": "코드 실행",
+    "web_search": "웹 검색",
+    "web_extract": "웹 페이지 읽기",
+    "browser_navigate": "브라우저 이동",
+    "browser_click": "브라우저 클릭",
+    "browser_type": "브라우저 입력",
+    "image_generate": "이미지 생성",
+    "video_generate": "영상 생성",
+    "text_to_speech": "음성 생성",
+    "vision_analyze": "이미지 분석",
+    "session_search": "지난 세션 검색",
+    "skill_view": "스킬 보기",
+    "skills_list": "스킬 목록",
+    "skill_manage": "스킬 관리",
+    "delegate_task": "작업 위임",
+    "cronjob_manage": "예약 관리",
+    "clarify": "질문",
+    "memory": "메모리",
+    "todo_list": "할 일 목록",
+}
+
+
+def _full(entry):
+    """A tpl() entry that must match the WHOLE activity string."""
+    pattern, replacement = entry
+    return re.compile(pattern.pattern + r"\Z", pattern.flags), replacement
+
+
+# agent._touch_activity() descriptions.  Specific before generic.
+ACTIVITY_KO: list[tuple[re.Pattern, str]] = [_full(e) for e in (
+    tpl("starting new turn (cached)", "새 턴 시작 (캐시)"),
+    tpl("starting new turn", "새 턴 시작"),
+    tpl("starting API call #{}", "API 호출 #{} 시작"),
+    tpl("API call #{} completed", "API 호출 #{} 완료"),
+    tpl("receiving stream response", "스트림 응답 수신 중"),
+    tpl("waiting for non-streaming API response", "비스트리밍 API 응답 대기 중"),
+    tpl("waiting for stream response ({}s, no chunks yet)", "스트림 응답 대기 중 ({}초, 아직 수신 없음)"),
+    tpl("waiting for stream response ({}s, {})", "스트림 응답 대기 중 ({0}초, {1})"),
+    tpl("waiting for provider response (streaming)", "제공자 응답 대기 중 (스트리밍)"),
+    tpl("waiting for provider response ({}s, {})", "제공자 응답 대기 중 ({0}초, {1})"),
+    tpl("tool results posted, continuing iteration #{}", "도구 결과 전달, 반복 #{} 계속"),
+    tpl("tool completed: {} ({}s){}", "도구 완료: {0} ({1}초){2}"),
+    tpl("executing tool: {}", "도구 실행 중: {}"),
+    tpl("executing {} tools concurrently: {}", "도구 {0}개 동시 실행 중: {1}"),
+    tpl("sequential tool running ({}s): {}", "도구 순차 실행 중 ({0}초): {1}"),
+    tpl("stream retry {}/{} after {}", "{2} 이후 스트림 재시도 {0}/{1}"),
+    tpl("stale stream detected after {}s, reconnecting", "{}초 동안 스트림이 멈춰 다시 연결 중"),
+    tpl("stale non-streaming call killed after {}s", "{}초 동안 멈춘 비스트리밍 호출을 종료함"),
+    tpl("codex stream killed after {}s with no SSE events", "{}초 동안 SSE 이벤트가 없어 codex 스트림을 종료함"),
+    tpl("codex stream killed after {}s without model progress", "{}초 동안 모델 진행이 없어 codex 스트림을 종료함"),
+    tpl("codex stream killed after {}s with no first stream event", "{}초 동안 첫 스트림 이벤트가 없어 codex 스트림을 종료함"),
+    tpl("API error recovery (attempt {}/{})", "API 오류 복구 중 (시도 {0}/{1})"),
+    tpl("compression blocked ({})", "압축 차단됨 ({})"),
+    tpl("local model loading", "로컬 모델 로딩 중"),
+    tpl("{}, {}s remaining", "{0}, {1}초 남음"),
+)]

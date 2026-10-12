@@ -27,7 +27,8 @@ gateway 슬래시 응답이 한국어가 됩니다.
 |---|---|
 | 크론 배달 헤더/푸터 | `cron/scheduler_delivery.py`에 생 f-string, 카탈로그에 `cron` 섹션 자체가 없음 |
 | 제공자 오류·재시도·폴백·압축 (66건) | `agent/turn_recovery.py` 등에 하드코딩 그대로 |
-| 바쁠 때 첫 안내 4종 | `agent/onboarding.py` 리터럴 |
+| 처음 안내 팁 (바쁠 때 4종 + 도구 진행 1종) | `agent/onboarding.py` 리터럴. 응답 끝에 덧붙거나 진행 말풍선(코드블록) 안에 들어가서 출력 쪽 앵커로는 못 잡음 → 원천에서 교체 |
+| 하트비트·바쁠 때 응답의 상세 칸 | `반복 11/60, receiving stream response`, `실행 중: terminal` — 내부 활동 설명과 생 툴 id |
 | 디스코드 승인 버튼 라벨 | `label="Approve Once"` 리터럴 |
 | 플러그인 툴 이름 | 업스트림 동사는 큐레이션된 빌트인만 |
 
@@ -60,7 +61,8 @@ monkeypatch로 동작합니다. 대부분은 module-global 조회라 import 순�
 |---|---|
 | `TurnRunner._progress_build_message` · `BasePlatformAdapter.format_tool_event` | 업스트림에 라벨이 없는 툴의 이름 (`⚙️ tool_search…`) |
 | `cron.scheduler._deliver_result` + `cron.scheduler.load_config` | 크론 배달 헤더/푸터 (영어 래퍼 대체) |
-| `DiscordAdapter.send` / `send_clarify` / `send_slash_confirm` / `send_exec_approval` / `send_update_prompt` / `send_choice_picker` | 업스트림이 하드코딩한 시스템 문구, 버튼 라벨, 승인 사유 |
+| `agent.onboarding._BUSY_INPUT_HINTS_GATEWAY` / `_BUSY_INPUT_HINT_GATEWAY_DEFAULT` / `tool_progress_hint_gateway` | 처음 안내 팁 (원천 교체) |
+| `DiscordAdapter.send` / `edit_message` / `send_clarify` / `send_slash_confirm` / `send_exec_approval` / `send_update_prompt` / `send_choice_picker` | 업스트림이 하드코딩한 시스템 문구, 버튼 라벨, 승인 사유 |
 | `PlatformEntry.adapter_factory` / `.standalone_sender_fn` (모든 scope) | 늦게 로드되는 프로필, 크론 HTTP 직행 경로 |
 
 > **어댑터 클래스는 프로필마다 다릅니다.** Discord 어댑터는 `kind: platform` 디렉토리
@@ -147,6 +149,8 @@ tpl("❌ Rate limited after {} retries — {}", "❌ {0}회 재시도 후 속도
 | `SEND_REWRITES` | 고정 시스템 문구 (제공자 오류·재시도 포함) |
 | `LABEL_KO` | 버튼 라벨 · 승인 사유 (완전일치) |
 | `TOOL_NAMES_KO` | 업스트림 라벨이 없는 툴 이름 |
+| `BUSY_HINTS_KO` · `BUSY_HINT_DEFAULT_KO` · `TOOL_PROGRESS_HINT_KO` | 처음 안내 팁 |
+| `TOOL_NOUNS_KO` · `ACTIVITY_KO` | 하트비트/바쁠 때 응답의 상세 칸 |
 
 ## 호환성
 

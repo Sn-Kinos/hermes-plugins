@@ -57,10 +57,15 @@ import logging
 import re
 
 from .strings import (
+    ACTIVITY_KO,
+    BUSY_HINT_DEFAULT_KO,
+    BUSY_HINTS_KO,
     CRON_WRAP_KO,
     LABEL_KO,
     SEND_REWRITES,
     TOOL_NAMES_KO,
+    TOOL_NOUNS_KO,
+    TOOL_PROGRESS_HINT_KO,
 )
 
 logger = logging.getLogger(__name__)
@@ -274,7 +279,45 @@ def _tr(value):
     exact = LABEL_KO.get(value.strip())
     if exact is not None:
         return exact
-    return _apply(SEND_REWRITES, value)
+    return _localize_status_detail(_apply(SEND_REWRITES, value))
+
+
+# ---------------------------------------------------------------------------
+# Status-detail slots inside otherwise-Korean catalog messages.
+#
+# The heartbeat ("⏳ 작업 중 — 3분 — 반복 11/60, receiving stream response") and
+# the busy ack ("… (2분 경과, 실행 중: terminal)") are catalog strings, but
+# upstream fills their detail with internal values: a raw tool id or an
+# agent._touch_activity() description.  Both shapes start with the Korean
+# catalog text, so these are still start-anchored, just on the Korean side.
+# ---------------------------------------------------------------------------
+
+_HEARTBEAT = re.compile(r"^(⏳ 작업 중 — \d+분 — )(?:(반복 \d+(?:/\d+)?)(, ))?(.+)$", re.S)
+_ACK_TOOL = re.compile(r"^([^\n]*?\((?:[^()\n]*, )?실행 중: )([A-Za-z0-9_\-]+)(\))")
+
+
+def _tool_noun(name: str):
+    return TOOL_NOUNS_KO.get(name) or TOOL_NAMES_KO.get(name)
+
+
+def _activity_ko(text: str) -> str:
+    noun = _tool_noun(text)
+    if noun:
+        return noun
+    return _apply(ACTIVITY_KO, text)
+
+
+def _localize_status_detail(text: str) -> str:
+    m = _HEARTBEAT.match(text)
+    if m:
+        head, iteration, sep, action = m.groups()
+        return head + (iteration + sep if iteration else "") + _activity_ko(action)
+    m = _ACK_TOOL.match(text)
+    if m:
+        noun = _tool_noun(m.group(2))
+        if noun:
+            return text[: m.start(2)] + noun + text[m.end(2):]
+    return text
 
 
 def _wrap_text_params(cls, method_name: str, params: tuple[str, ...]) -> bool:
@@ -320,6 +363,11 @@ _DISCORD_TEXT_PARAMS: tuple[tuple[str, tuple[str, ...]], ...] = (
     ("send_exec_approval", ("description",)),
     ("send_update_prompt", ("prompt",)),
     ("send_choice_picker", ("title",)),
+    # The heartbeat is sent once and then EDITED in place every tick, so a
+    # send()-only seam translated just its first minute.  Streamed reply edits
+    # pass through here too; every rule is start-anchored on system shapes, so
+    # a conversational reply is left alone exactly as it is in send().
+    ("edit_message", ("content",)),
 )
 
 
@@ -447,8 +495,55 @@ def _registered_discord_entries(registry) -> list:
 
 # ---------------------------------------------------------------------------
 
+def _patch_onboarding_hints() -> None:
+    """Swap the first-time tips at their source (agent/onboarding.py).
+
+    ``busy_input_hint_gateway`` reads ``_BUSY_INPUT_HINTS_GATEWAY`` and the
+    default constant as module globals at call time, and both callers import
+    the functions inside the calling function, so mutating the dict in place,
+    rebinding the default and replacing ``tool_progress_hint_gateway`` all take
+    effect for every later call.  Only modes upstream still defines are set.
+    """
+    import functools
+
+    from agent import onboarding
+
+    if getattr(onboarding, _MARK, False):
+        return
+
+    missing = []
+    hints = getattr(onboarding, "_BUSY_INPUT_HINTS_GATEWAY", None)
+    for mode, text_ko in BUSY_HINTS_KO.items():
+        if isinstance(hints, dict) and mode in hints:
+            hints[mode] = text_ko
+        else:
+            missing.append(f"busy:{mode}")
+    if hasattr(onboarding, "_BUSY_INPUT_HINT_GATEWAY_DEFAULT"):
+        onboarding._BUSY_INPUT_HINT_GATEWAY_DEFAULT = BUSY_HINT_DEFAULT_KO
+    else:
+        missing.append("busy:default")
+
+    original = getattr(onboarding, "tool_progress_hint_gateway", None)
+    if original is not None:
+        @functools.wraps(original)
+        def tool_progress_hint_gateway() -> str:
+            return TOOL_PROGRESS_HINT_KO
+
+        onboarding.tool_progress_hint_gateway = tool_progress_hint_gateway
+    else:
+        missing.append("tool_progress")
+
+    if missing:
+        logger.warning(
+            "hermes-korean-ui: onboarding tips not present upstream (left in English): %s",
+            ", ".join(missing),
+        )
+    setattr(onboarding, _MARK, True)
+
+
 _PATCHES = (
     ("tool progress names", _patch_tool_progress_names),
+    ("onboarding tips", _patch_onboarding_hints),
     ("cron delivery wrapper", _patch_cron_delivery),
     # Covers the live adapter classes and the standalone (cron) sender alike.
     ("discord send paths", _patch_discord_sends),
