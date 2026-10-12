@@ -1,0 +1,5 @@
+name: mattermost-reactions
+kind: standalone
+version: 1.0.0
+description: Shows the bot's processing state on Mattermost as emoji reactions on the triggering post (eyes while working, then white_check_mark / x), like the Discord adapter does.
+author: local (kinos)

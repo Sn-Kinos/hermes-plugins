@@ -10,6 +10,7 @@
 | [`korean-ui/`](korean-ui/) | 하드코딩된 영어 시스템 문구를 한국어로 |
 | [`discord-add-reaction/`](discord-add-reaction/) | `discord` 툴에 `add_reaction` 액션 추가 |
 | [`progress-codeblock/`](progress-codeblock/) | 툴 진행 말풍선을 코드블록 + 최근 N건 윈도우로 |
+| [`mattermost-reactions/`](mattermost-reactions/) | Mattermost에서도 Discord처럼 처리 상태를 리액션으로 (`:eyes:` → `:white_check_mark:` / `:x:`) |
 
 ## 설치
 
