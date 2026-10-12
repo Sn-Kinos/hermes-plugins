@@ -1,0 +1,5 @@
+name: mattermost-direct-links
+kind: standalone
+version: 1.0.0
+description: Unwraps redirect-wrapped Mattermost permalinks (and mattermost:// links) to plain https permalinks on Mattermost egress only, so one cron message works on both Discord and Mattermost.
+author: local (kinos)
